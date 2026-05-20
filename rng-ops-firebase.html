@@ -680,12 +680,9 @@ function attachFbListeners() {
   try {
     fbDb = firebase.database(fbApp);
 
-    // Enable offline persistence — data cached to IndexedDB
-    fbDb.enablePersistence().catch(err => {
-      // FAILED_PRECONDITION: multiple tabs open — only first tab gets persistence
-      // UNIMPLEMENTED: browser doesn't support it
-      console.warn('Firebase persistence:', err.code);
-    });
+    // Note: Realtime Database (web SDK) does not expose a persistence API
+    // — it caches in-memory automatically and survives brief disconnects.
+    // Long offline periods are handled by our JSON session export (P0 #2).
 
     // Generate a stable event ID from event name + year
     fbEventId = cfg.name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,40)
