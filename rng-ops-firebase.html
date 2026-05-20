@@ -20,6 +20,7 @@
 <!-- Firebase compat SDK — works in plain <script> tags, no bundler needed -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <style>
 :root {
@@ -637,7 +638,33 @@ function connectFirebase(fromFields) {
     // Delete existing app if re-connecting
     try { firebase.app().delete(); } catch(e) {}
     fbApp = firebase.initializeApp(config);
-    fbDb  = firebase.database(fbApp);
+
+    setSyncStatus('syncing', 'Signing in…');
+    setFbStatus('Signing in anonymously…');
+
+    // Anonymous auth — required by locked DB rules (auth != null).
+    // DB listeners are attached only AFTER sign-in succeeds.
+    firebase.auth(fbApp).signInAnonymously()
+      .then(cred => {
+        const uid = cred && cred.user ? cred.user.uid : '(unknown)';
+        console.log('Firebase auth uid:', uid);
+        attachFbListeners();
+      })
+      .catch(err => {
+        console.error('Firebase auth error:', err);
+        setFbStatus('Auth error: ' + err.message + ' — enable Anonymous sign-in in Firebase Console.', true);
+        setSyncStatus('offline', 'Auth error');
+      });
+  } catch (err) {
+    setFbStatus('Error: ' + err.message, true);
+    setSyncStatus('offline', 'Error');
+  }
+}
+
+// Attach DB listeners — called only after successful anonymous sign-in.
+function attachFbListeners() {
+  try {
+    fbDb = firebase.database(fbApp);
 
     // Enable offline persistence — data cached to IndexedDB
     fbDb.enablePersistence().catch(err => {
@@ -646,7 +673,7 @@ function connectFirebase(fromFields) {
       console.warn('Firebase persistence:', err.code);
     });
 
-    // Generate a stable event ID from event name + year, or use stored one
+    // Generate a stable event ID from event name + year
     fbEventId = cfg.name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,40)
                 + '-' + new Date().getFullYear();
     fbRef = fbDb.ref('events/' + fbEventId);
@@ -672,6 +699,10 @@ function connectFirebase(fromFields) {
         }));
         rebuildFilters(); renderAll();
       }
+    }, err => {
+      console.error('Firebase competitors read error:', err);
+      setFbStatus('Read error: ' + err.message, true);
+      setSyncStatus('offline', 'Permission denied');
     });
 
     // Subscribe to config
@@ -682,6 +713,8 @@ function connectFirebase(fromFields) {
         syncCfgToUI();
         renderAll();
       }
+    }, err => {
+      console.error('Firebase config read error:', err);
     });
 
     fbListeners = [
@@ -1333,7 +1366,18 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
 setSyncStatus('offline', 'Local');
 loadSample();
 
-// Auto-connect if hardcoded config is present
+// Auto-connect if hardcoded config is present.
+// Wrapped in try/catch + typeof guard per Turn 6 fix — never let a missing
+// config or auth error halt the rest of script execution.
+try {
+  if (typeof FIREBASE_CONFIG !== 'undefined'
+      && FIREBASE_CONFIG.apiKey
+      && FIREBASE_CONFIG.databaseURL) {
+    connectFirebase(false);
+  }
+} catch (e) {
+  console.warn('Auto-connect skipped:', e && e.message);
+}
 </script>
 </body>
 </html>
