@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RNG OPS</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+
+<!-- ─────────────────────────────────────────────────────────
+  FIREBASE SETUP INSTRUCTIONS
+  ────────────────────────────────────────────────────────────
+  1. Go to https://console.firebase.google.com
+  2. Create a new project (e.g. "rng-ops")
+  3. Add a Web App — copy the firebaseConfig object below
+  4. Build → Realtime Database → Create Database → Test Mode
+  5. Replace the placeholder values in FIREBASE_CONFIG below
+  6. Host this file on GitHub Pages or Netlify
+  ──────────────────────────────────────────────────────────── -->
+
+<!-- Firebase compat SDK — works in plain <script> tags, no bundler needed -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+:root {
+  --text-xs:clamp(0.75rem,0.7rem+0.25vw,0.875rem);
+  --text-sm:clamp(0.875rem,0.8rem+0.35vw,1rem);
+  --text-base:clamp(1rem,0.95rem+0.25vw,1.125rem);
+  --text-lg:clamp(1.125rem,1rem+0.75vw,1.5rem);
+  --text-xl:clamp(1.5rem,1.2rem+1.25vw,2.25rem);
+  --sp1:.25rem;--sp2:.5rem;--sp3:.75rem;--sp4:1rem;--sp5:1.25rem;--sp6:1.5rem;--sp8:2rem;--sp10:2.5rem;--sp12:3rem;--sp16:4rem;
+  --r-sm:.375rem;--r-md:.5rem;--r-lg:.75rem;--r-full:9999px;
+  --tr:180ms cubic-bezier(0.16,1,0.3,1);
+  --font:'Satoshi','Inter',sans-serif;
+  --sw:200px;--row-h:56px;
+}
+[data-theme="dark"]{
+  --bg:#0f1117;--sur:#171a23;--sur2:#1e2130;--sur3:#252840;
+  --bdr:rgba(255,255,255,0.08);--bdr2:rgba(255,255,255,0.15);
+  --tx:#e8eaf0;--txm:#8b90a0;--txf:#4a5060;
+  --pri:#3fb8c8;--prih:#2da0b0;--prid:rgba(63,184,200,0.12);
+  --suc:#4caf7d;--sucd:rgba(76,175,125,0.15);
+  --wrn:#f0a840;--wrnd:rgba(240,168,64,0.15);
+  --dan:#e05c6a;--dand:rgba(224,92,106,0.15);
+  --yel:#e8c84a;--yeld:rgba(232,200,74,0.15);
+  --row-odd:#171a23;--row-even:#1c2030;--squad-hdr:#1a1e2e;
+}
+[data-theme="light"]{
+  --bg:#f0f1f5;--sur:#fff;--sur2:#f0f1f5;--sur3:#e4e6ee;
+  --bdr:rgba(0,0,0,0.08);--bdr2:rgba(0,0,0,0.15);
+  --tx:#1a1d28;--txm:#5a6070;--txf:#a0a8b8;
+  --pri:#0d7a8a;--prih:#0a6070;--prid:rgba(13,122,138,0.10);
+  --suc:#2e7d52;--sucd:rgba(46,125,82,0.12);
+  --wrn:#b07010;--wrnd:rgba(176,112,16,0.12);
+  --dan:#b03040;--dand:rgba(176,48,64,0.12);
+  --yel:#8a7000;--yeld:rgba(138,112,0,0.12);
+  --row-odd:#ffffff;--row-even:#f2f4f8;--squad-hdr:#e8eaf2;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);font-size:var(--text-sm);color:var(--tx);background:var(--bg);-webkit-font-smoothing:antialiased}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+input,select{font:inherit;color:inherit}
+table{border-collapse:collapse;width:100%}
+
+.app{display:grid;grid-template-columns:var(--sw) 1fr;grid-template-rows:auto 1fr;height:100dvh}
+.sidebar{grid-row:1/-1;background:var(--sur);border-right:1px solid var(--bdr);display:flex;flex-direction:column;overflow-y:auto}
+.topbar{grid-column:2;background:var(--sur);border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:var(--sp4);padding:var(--sp3) var(--sp6);min-height:52px;z-index:10}
+.main{grid-column:2;overflow-y:auto;overscroll-behavior:contain;padding:var(--sp5) var(--sp6)}
+
+.logo-wrap{padding:var(--sp5) var(--sp4) var(--sp4);border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:var(--sp3)}
+.logo-t{font-size:var(--text-base);font-weight:700;color:var(--tx)}
+.logo-s{font-size:var(--text-xs);color:var(--txm);margin-top:1px}
+.nav-sec{padding:var(--sp4) var(--sp4) var(--sp2);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--txf)}
+.nav-i{display:flex;align-items:center;gap:var(--sp3);padding:var(--sp2) var(--sp3);border-radius:var(--r-md);font-size:var(--text-sm);font-weight:500;color:var(--txm);cursor:pointer;margin:1px var(--sp2);transition:background var(--tr),color var(--tr)}
+.nav-i:hover{background:var(--sur2);color:var(--tx)}
+.nav-i.on{background:var(--prid);color:var(--pri)}
+.sb-foot{margin-top:auto;padding:var(--sp4);border-top:1px solid var(--bdr);display:flex;align-items:center;gap:var(--sp3)}
+.sb-evt{font-size:var(--text-xs);color:var(--txm);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.icon-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-md);color:var(--txm);transition:background var(--tr)}
+.icon-btn:hover{background:var(--sur2);color:var(--tx)}
+
+/* sync indicator */
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--txf);flex-shrink:0;transition:background .4s}
+.sync-dot.online{background:var(--suc)}
+.sync-dot.syncing{background:var(--wrn);animation:pulse 1s ease-in-out infinite}
+.sync-dot.offline{background:var(--dan)}
+.sync-lbl{font-size:10px;color:var(--txm)}
+
+.tb-title{font-size:var(--text-base);font-weight:700}
+.tb-space{flex:1}
+.day-seg{display:flex;gap:var(--sp1);background:var(--sur2);border-radius:var(--r-md);padding:var(--sp1)}
+.day-btn{padding:var(--sp1) var(--sp3);border-radius:var(--r-sm);font-size:var(--text-xs);font-weight:600;color:var(--txm);cursor:pointer;transition:background var(--tr),color var(--tr)}
+.day-btn.on{background:var(--pri);color:#fff}
+
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp4);margin-bottom:var(--sp5)}
+.stat-c{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:var(--sp4) var(--sp5)}
+.stat-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--txm);margin-bottom:var(--sp2)}
+.stat-v{font-size:var(--text-xl);font-weight:700;font-variant-numeric:tabular-nums;line-height:1;color:var(--tx)}
+.stat-c.oc .stat-v{color:var(--pri)}
+.stat-c.cp .stat-v{color:var(--suc)}
+.stat-c.rm .stat-v{color:var(--txm)}
+
+.ctrl-bar{display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4);flex-wrap:wrap}
+.srch{position:relative;min-width:190px;max-width:270px}
+.srch svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txf);pointer-events:none}
+.srch input{width:100%;background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-md);padding:var(--sp2) var(--sp3) var(--sp2) 30px;font-size:var(--text-sm);color:var(--tx);outline:none;transition:border-color var(--tr)}
+.srch input:focus{border-color:var(--pri)}
+.srch input::placeholder{color:var(--txf)}
+.fsel{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-md);padding:var(--sp2) var(--sp3);font-size:var(--text-sm);color:var(--tx);outline:none;cursor:pointer;transition:border-color var(--tr)}
+.fsel:focus{border-color:var(--pri)}
+.ivl-wrap{display:flex;align-items:center;gap:var(--sp2);background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-md);padding:var(--sp2) var(--sp3)}
+.ivl-lbl{font-size:10px;color:var(--txm);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.ivl-inp{width:52px;background:transparent;border:none;font-size:var(--text-sm);font-weight:700;color:var(--pri);text-align:center;outline:none}
+
+.btn{display:inline-flex;align-items:center;gap:var(--sp2);padding:var(--sp2) var(--sp4);border-radius:var(--r-md);font-size:var(--text-sm);font-weight:600;cursor:pointer;transition:background var(--tr),opacity var(--tr)}
+.btn-pri{background:var(--pri);color:#fff}.btn-pri:hover{background:var(--prih)}
+.btn-gho{background:transparent;border:1px solid var(--bdr);color:var(--txm)}.btn-gho:hover{background:var(--sur2);color:var(--tx)}
+.btn-grn{background:var(--suc);color:#fff}.btn-grn:hover{opacity:.85}
+.btn-red{background:var(--dan);color:#fff}.btn-red:hover{opacity:.85}
+.btn-blu{background:var(--pri);color:#fff}.btn-blu:hover{background:var(--prih)}
+.btn-row{padding:var(--sp2) var(--sp4);font-size:var(--text-sm);font-weight:700;border-radius:var(--r-md)}
+.btn-sm{padding:var(--sp1) var(--sp3);font-size:var(--text-xs)}
+
+.editable{background:transparent;border:1px solid transparent;border-radius:var(--r-sm);padding:3px 6px;font:inherit;color:var(--tx);width:100%;min-width:55px;outline:none;transition:border-color var(--tr),background var(--tr)}
+.editable:hover{border-color:var(--bdr2)}
+.editable:focus{border-color:var(--pri);background:var(--sur3)}
+
+.tw{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);overflow:auto}
+.tw table{font-size:var(--text-sm);font-variant-numeric:tabular-nums;min-width:600px}
+thead th{background:var(--sur3);padding:var(--sp3) var(--sp4);text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--txm);border-bottom:1px solid var(--bdr);white-space:nowrap;position:sticky;top:0;z-index:2;cursor:default}
+thead th.sortable{cursor:pointer;user-select:none}
+thead th.sortable:hover{color:var(--tx)}
+thead th .sort-arrow{margin-left:4px;opacity:.4;font-size:10px}
+thead th.sort-asc .sort-arrow::after{content:'▲';opacity:1}
+thead th.sort-desc .sort-arrow::after{content:'▼';opacity:1}
+tbody tr:nth-child(odd){background:var(--row-odd)}
+tbody tr:nth-child(even){background:var(--row-even)}
+tbody tr.squad-hdr,tbody tr.squad-empty{background:var(--squad-hdr) !important}
+tbody tr{border-bottom:1px solid var(--bdr);transition:filter var(--tr)}
+tbody tr:not(.squad-hdr):not(.squad-empty):hover{filter:brightness(1.07)}
+tbody tr:not(.squad-hdr):not(.squad-empty){border-bottom:1px solid var(--bdr2) !important}
+tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);white-space:nowrap;height:var(--row-h)}
+.td-n{font-weight:600;font-size:var(--text-sm)}
+.td-b{font-weight:700;color:var(--pri);font-size:var(--text-sm)}
+.td-t{font-weight:600;font-size:var(--text-sm)}
+.td-act{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+.squad-hdr td{background:var(--squad-hdr);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--txm);padding:var(--sp2) var(--sp4);border-top:2px solid var(--bdr2);border-bottom:1px solid var(--bdr);height:auto !important}
+.squad-empty td{color:var(--txf);font-style:italic;font-size:var(--text-xs);height:var(--row-h)}
+
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:var(--r-full);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.b2{background:var(--prid);color:var(--pri)}
+.bnv{background:var(--wrnd);color:var(--wrn)}
+.bpc{background:var(--sucd);color:var(--suc)}
+.bdv{background:var(--sur3);color:var(--txm)}
+.bin{background:var(--sucd);color:var(--suc)}
+.blt{background:var(--wrnd);color:var(--wrn)}
+.bns{background:var(--dand);color:var(--dan)}
+.bpd{background:var(--sur3);color:var(--txm)}
+.bpa{background:var(--sucd);color:var(--suc)}
+.bup{background:var(--dand);color:var(--dan)}
+.bdnf{background:var(--dand);color:var(--dan)}
+.bstf{background:var(--dand);color:var(--dan);margin-left:4px}
+.bspn{background:var(--yeld);color:var(--yel);margin-left:4px}
+
+.t-ok{color:var(--suc);font-weight:700}
+.t-wn{color:var(--wrn);font-weight:700}
+.t-al{color:var(--dan);font-weight:700}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:5px;animation:pulse 1s ease-in-out infinite;vertical-align:middle}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.nu-bar{background:var(--prid);border:1px solid rgba(63,184,200,.2);border-radius:var(--r-lg);padding:var(--sp4) var(--sp5);margin-bottom:var(--sp5);display:flex;align-items:center;gap:var(--sp6)}
+.nu-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--pri);margin-bottom:4px}
+.nu-nm{font-size:var(--text-base);font-weight:700;color:var(--tx)}
+.nu-dt{font-size:var(--text-xs);color:var(--txm);margin-top:2px}
+.cd-wrap{margin-left:auto;text-align:right}
+.cd-lbl{font-size:10px;color:var(--txm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.cd{font-size:var(--text-xl);font-weight:700;color:var(--pri);font-variant-numeric:tabular-nums;line-height:1}
+
+.obs-c{display:flex;align-items:center;gap:5px}
+.obs-b{background:var(--sur3);border:none;border-radius:var(--r-sm);width:26px;height:26px;cursor:pointer;font-size:15px;color:var(--tx);display:flex;align-items:center;justify-content:center;transition:background var(--tr)}
+.obs-b:hover{background:var(--bdr2)}
+.obs-v{min-width:22px;text-align:center;font-weight:700;font-size:var(--text-sm)}
+
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp6);max-width:840px}
+.cfg-c{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:var(--sp6)}
+.cfg-c h3{font-size:var(--text-sm);font-weight:700;color:var(--tx);margin-bottom:var(--sp5);padding-bottom:var(--sp3);border-bottom:1px solid var(--bdr)}
+.f-row{display:flex;flex-direction:column;gap:var(--sp2);margin-bottom:var(--sp4)}
+.f-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--txm)}
+.f-inp{background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--r-md);padding:var(--sp3) var(--sp3);font-size:var(--text-sm);color:var(--tx);outline:none;transition:border-color var(--tr)}
+.f-inp:focus{border-color:var(--pri)}
+.drop{border:2px dashed var(--bdr);border-radius:var(--r-lg);padding:var(--sp8);text-align:center;cursor:pointer;transition:border-color var(--tr),background var(--tr)}
+.drop:hover{border-color:var(--pri);background:var(--prid)}
+.drop p{font-size:var(--text-xs);color:var(--txm);margin-top:var(--sp2)}
+
+/* event id card */
+.eid-box{background:var(--prid);border:1px solid rgba(63,184,200,.25);border-radius:var(--r-md);padding:var(--sp3) var(--sp4);display:flex;align-items:center;gap:var(--sp3);margin-top:var(--sp4)}
+.eid-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--pri)}
+.eid-val{font-size:var(--text-base);font-weight:700;color:var(--tx);letter-spacing:.06em;font-variant-numeric:tabular-nums}
+.eid-sub{font-size:var(--text-xs);color:var(--txm);margin-top:2px}
+
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity var(--tr)}
+.mo.open{opacity:1;pointer-events:all}
+.md{background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--r-lg);padding:var(--sp6);min-width:340px;max-width:480px;width:90vw;transform:translateY(10px);transition:transform var(--tr)}
+.mo.open .md{transform:translateY(0)}
+.md-t{font-size:var(--text-base);font-weight:700;margin-bottom:var(--sp5)}
+.md-act{display:flex;gap:var(--sp3);justify-content:flex-end;margin-top:var(--sp5)}
+
+.es{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:var(--sp12) var(--sp8);color:var(--txm);text-align:center;gap:var(--sp3)}
+.es svg{color:var(--txf)}
+.es p{font-size:var(--text-sm);max-width:36ch}
+.page{display:none}.page.active{display:block}
+#toast{position:fixed;bottom:var(--sp6);right:var(--sp6);background:var(--sur3);border:1px solid var(--bdr2);border-radius:var(--r-md);padding:var(--sp3) var(--sp5);font-size:var(--text-sm);font-weight:500;color:var(--tx);z-index:200;transform:translateY(10px);opacity:0;transition:all .22s ease;pointer-events:none;max-width:300px}
+#toast.show{transform:translateY(0);opacity:1}
+
+/* change-warning badge & popover */
+.chg-wrap{position:relative;display:inline-flex;align-items:center;margin-left:5px;vertical-align:middle}
+.chg-badge{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--wrnd);color:var(--wrn);font-size:11px;font-weight:800;cursor:pointer;border:none;line-height:1;transition:background var(--tr)}
+.chg-badge:hover{background:var(--wrn);color:#fff}
+.chg-pop{position:absolute;left:26px;top:50%;transform:translateY(-50%);background:var(--sur3);border:1px solid var(--bdr2);border-radius:var(--r-md);padding:var(--sp3) var(--sp4);min-width:200px;max-width:280px;z-index:50;box-shadow:0 4px 16px rgba(0,0,0,.3);display:none;white-space:normal}
+.chg-pop.open{display:block}
+.chg-pop-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--wrn);margin-bottom:var(--sp2)}
+.chg-item{font-size:var(--text-xs);color:var(--txm);margin-bottom:3px}
+.chg-item strong{color:var(--tx);font-weight:700}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="logo-wrap">
+    <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+      <rect width="32" height="32" rx="7" fill="var(--pri)"/>
+      <path d="M7 9h7a4 4 0 0 1 0 8H7V9z" stroke="#fff" stroke-width="2" stroke-linejoin="round"/>
+      <line x1="14" y1="17" x2="19" y2="24" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="23" cy="15" r="3" stroke="#fff" stroke-width="2"/>
+      <line x1="26" y1="15" x2="28" y2="15" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <div><div class="logo-t">RNG OPS</div><div class="logo-s">Event Control</div></div>
+  </div>
+  <div class="nav-sec">Operations</div>
+  <div class="nav-i on" onclick="nav('checkin',this)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Check-In
+  </div>
+  <div class="nav-i" onclick="nav('run',this)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Run Scoring
+  </div>
+  <div class="nav-i" onclick="nav('results',this)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Results
+  </div>
+  <div class="nav-sec">Setup</div>
+  <div class="nav-i" onclick="nav('roster',this)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2"/><circle cx="3" cy="12" r="1.2"/><circle cx="3" cy="18" r="1.2"/></svg>Roster
+  </div>
+  <div class="nav-i" onclick="nav('config',this)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>Event Config
+  </div>
+  <div class="sb-foot">
+    <div class="sync-dot" id="sync-dot"></div>
+    <span class="sync-lbl" id="sync-lbl">—</span>
+    <div class="tb-space"></div>
+    <button class="icon-btn" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</aside>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <span class="tb-title" id="tb-title">Check-In</span>
+  <span id="sb-evt" style="font-size:var(--text-xs);color:var(--txm)">Twilight Biathlon 2026</span>
+  <div class="tb-space"></div>
+  <div class="day-seg">
+    <button class="day-btn on" onclick="setDay('All',this)">All</button>
+    <button class="day-btn" onclick="setDay('Friday',this)">Friday</button>
+    <button class="day-btn" onclick="setDay('Saturday',this)">Saturday</button>
+  </div>
+</header>
+
+<main class="main">
+
+<!-- CHECK-IN -->
+<div class="page active" id="page-checkin">
+  <div class="ctrl-bar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search name…" id="ci-q" oninput="renderCI()">
+    </div>
+    <select class="fsel" id="ci-dv" onchange="renderCI()">
+      <option value="">All Divisions</option>
+      <option>2-GUN</option><option>NV 2-GUN</option><option>PCC</option><option>NV PCC</option>
+    </select>
+    <select class="fsel" id="ci-sq" onchange="renderCI()"><option value="">All Squads</option></select>
+    <select class="fsel" id="ci-st" onchange="renderCI()">
+      <option value="">All Statuses</option>
+      <option>Checked In</option><option>Late</option><option>No Show</option><option>Pending</option>
+    </select>
+    <div class="tb-space"></div>
+    <span id="ci-cnt" style="font-size:var(--text-xs);color:var(--txm)"></span>
+  </div>
+  <div class="tw" style="max-height:calc(100vh - 175px)">
+    <table>
+      <thead><tr>
+        <th>Last</th><th>First</th><th>Division</th><th>Squad</th><th>Sched Time</th><th>Shirt</th><th>Fee Status</th><th>Check-In</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="ci-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- RUN SCORING -->
+<div class="page" id="page-run">
+  <div class="stat-row">
+    <div class="stat-c"><div class="stat-l">Total</div><div class="stat-v" id="s-tot">0</div></div>
+    <div class="stat-c oc"><div class="stat-l">On Course</div><div class="stat-v" id="s-oc">0</div></div>
+    <div class="stat-c cp"><div class="stat-l">Completed</div><div class="stat-v" id="s-cp">0</div></div>
+    <div class="stat-c rm"><div class="stat-l">Remaining</div><div class="stat-v" id="s-rm">0</div></div>
+  </div>
+  <div class="nu-bar">
+    <div>
+      <div class="nu-lbl">Next Release</div>
+      <div class="nu-nm" id="nu-nm">—</div>
+      <div class="nu-dt" id="nu-dt">—</div>
+    </div>
+    <div class="cd-wrap">
+      <div class="cd-lbl">Countdown</div>
+      <div class="cd" id="cd">—</div>
+    </div>
+  </div>
+  <div class="ctrl-bar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search name or bib…" id="run-q" oninput="renderRun()">
+    </div>
+    <select class="fsel" id="run-sq" onchange="renderRun()"><option value="">All Squads</option></select>
+    <div class="ivl-wrap">
+      <span class="ivl-lbl">Interval</span>
+      <input class="ivl-inp" type="text" id="ivl-v" value="5:00" onchange="applyIvl()">
+    </div>
+  </div>
+  <div class="tw" style="max-height:calc(100vh - 330px)">
+    <table>
+      <thead><tr>
+        <th>Bib</th><th>Last</th><th>First</th><th>Div</th><th>Squad</th><th>Sched</th><th>Start</th><th>Finish</th><th>Obstacles</th><th>Time on Course</th><th></th><th>Actions</th>
+      </tr></thead>
+      <tbody id="run-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- RESULTS -->
+<div class="page" id="page-results">
+  <div class="ctrl-bar">
+    <div class="day-seg" style="background:var(--sur);border:1px solid var(--bdr)">
+      <button class="day-btn on" onclick="setRV('division',this)">By Division</button>
+      <button class="day-btn" onclick="setRV('overall',this)">Overall</button>
+    </div>
+    <select class="fsel" id="res-dv" onchange="renderRes()">
+      <option value="">All Divisions</option>
+      <option>2-GUN</option><option>NV 2-GUN</option><option>PCC</option><option>NV PCC</option>
+    </select>
+    <div class="tb-space"></div>
+    <button class="btn btn-gho btn-sm" onclick="expCSV()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV
+    </button>
+  </div>
+  <div class="tw" style="max-height:calc(100vh - 185px)">
+    <table>
+      <thead><tr>
+        <th>Rank</th><th>Bib</th><th>Last</th><th>First</th><th>Division</th><th>Squad</th><th>Raw Time</th><th>Obstacles</th><th>Penalty</th><th>Run Time</th>
+      </tr></thead>
+      <tbody id="res-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ROSTER -->
+<div class="page" id="page-roster">
+  <div class="ctrl-bar">
+    <div class="srch">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search…" id="ro-q" oninput="renderRo()">
+    </div>
+    <select class="fsel" id="ro-dv" onchange="renderRo()">
+      <option value="">All Divisions</option>
+      <option>2-GUN</option><option>NV 2-GUN</option><option>PCC</option><option>NV PCC</option>
+    </select>
+  </div>
+  <div class="tw" style="max-height:calc(100vh - 175px)">
+    <table>
+      <thead><tr>
+        <th class="sortable" onclick="roSort('bib')" id="rh-bib">Bib <span class="sort-arrow"></span></th>
+        <th class="sortable" onclick="roSort('last')" id="rh-last">Last <span class="sort-arrow"></span></th>
+        <th class="sortable" onclick="roSort('first')" id="rh-first">First <span class="sort-arrow"></span></th>
+        <th>Division</th><th>Day</th><th>Squad</th><th>Shirt</th><th>Phone</th><th>Email</th><th>Fee Status</th><th>Approval</th>
+      </tr></thead>
+      <tbody id="ro-tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CONFIG -->
+<div class="page" id="page-config">
+  <div class="cfg-grid">
+    <div class="cfg-c">
+      <h3>Event Settings</h3>
+      <div class="f-row"><label class="f-lbl">Event Name</label><input class="f-inp" id="cfg-nm" value="Twilight Biathlon 2026"></div>
+      <div class="f-row"><label class="f-lbl">Friday Squad Start Time</label><input class="f-inp" id="cfg-fri" type="time" value="21:30"></div>
+      <div class="f-row"><label class="f-lbl">Saturday Squad Start Time</label><input class="f-inp" id="cfg-sat" type="time" value="21:30"></div>
+      <div class="f-row"><label class="f-lbl">Default Release Interval (MM:SS)</label><input class="f-inp" id="cfg-ivl" value="5:00"></div>
+      <div class="f-row"><label class="f-lbl">Obstacle Penalty per Skip (MM:SS)</label><input class="f-inp" id="cfg-pen" value="5:00"></div>
+      <div style="display:flex;gap:var(--sp3);align-items:center;flex-wrap:wrap;margin-top:var(--sp2)">
+        <button class="btn btn-pri" onclick="saveCfg()">Save Settings</button>
+        <button class="btn btn-red btn-sm" onclick="openClearMo()" style="margin-left:auto">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+          Clear All Data
+        </button>
+      </div>
+      <!-- Live Event ID display -->
+      <div class="eid-box" id="eid-box" style="display:none">
+        <div>
+          <div class="eid-lbl">Firebase Event ID</div>
+          <div class="eid-val" id="eid-val">—</div>
+          <div class="eid-sub">Share this ID to connect other devices to this event</div>
+        </div>
+      </div>
+    </div>
+    <div class="cfg-c">
+      <h3>Firebase Connection</h3>
+      <div class="f-row">
+        <label class="f-lbl">API Key</label>
+        <input class="f-inp" id="fb-apiKey" placeholder="AIzaSy...">
+      </div>
+      <div class="f-row">
+        <label class="f-lbl">Auth Domain</label>
+        <input class="f-inp" id="fb-authDomain" placeholder="project-id.firebaseapp.com">
+      </div>
+      <div class="f-row">
+        <label class="f-lbl">Database URL</label>
+        <input class="f-inp" id="fb-dbURL" placeholder="https://project-id-default-rtdb.firebaseio.com">
+      </div>
+      <div class="f-row">
+        <label class="f-lbl">Project ID</label>
+        <input class="f-inp" id="fb-projectId" placeholder="project-id">
+      </div>
+      <div class="f-row">
+        <label class="f-lbl">App ID</label>
+        <input class="f-inp" id="fb-appId" placeholder="1:123456789:web:abc...">
+      </div>
+      <div style="display:flex;gap:var(--sp3);flex-wrap:wrap;margin-top:var(--sp2)">
+        <button class="btn btn-pri" onclick="connectFirebase()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Connect
+        </button>
+        <button class="btn btn-gho btn-sm" onclick="disconnectFirebase()">Disconnect</button>
+      </div>
+      <div id="fb-status" style="margin-top:var(--sp3);font-size:var(--text-xs);color:var(--txm)">Not connected — app running in local mode.</div>
+
+      <div style="margin-top:var(--sp6);border-top:1px solid var(--bdr);padding-top:var(--sp5)">
+        <h3 style="font-size:var(--text-sm);font-weight:700;margin-bottom:var(--sp4)">Import Competitors</h3>
+        <div class="drop" onclick="document.getElementById('csv-f').click()">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--txf)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>Click to upload CSV</p>
+          <p style="font-size:10px;margin-top:4px;color:var(--txf)">Last, First, Division, Day, Squad, Shirt, Phone, Email, Address, Paid, Approval</p>
+        </div>
+        <input type="file" id="csv-f" accept=".csv" style="display:none" onchange="impCSV(event)">
+        <div style="margin-top:var(--sp4);display:flex;gap:var(--sp3);align-items:center">
+          <button class="btn btn-gho btn-sm" onclick="loadSample()">Load Sample Data</button>
+          <span id="imp-msg" style="font-size:var(--text-xs);color:var(--txm)"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="mo" id="mo-edit" onclick="if(event.target===this)closeMo()">
+  <div class="md">
+    <div class="md-t" id="mo-t">Edit</div>
+    <div id="mo-body"></div>
+    <div class="md-act">
+      <button class="btn btn-gho" onclick="closeMo()">Cancel</button>
+      <button class="btn btn-pri" onclick="saveMo()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM CLEAR MODAL -->
+<div class="mo" id="mo-clear" onclick="if(event.target===this)closeClearMo()">
+  <div class="md" style="max-width:400px">
+    <div style="display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--dan)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div class="md-t" style="margin-bottom:0;color:var(--dan)">Clear All Data</div>
+    </div>
+    <p style="font-size:var(--text-sm);color:var(--txm);line-height:1.6;margin-bottom:var(--sp4)">This will permanently remove all <strong style="color:var(--tx)" id="clr-count">0</strong> competitors from local memory and from Firebase (if connected).</p>
+    <p style="font-size:var(--text-sm);color:var(--dan);font-weight:600;margin-bottom:var(--sp5)">This action cannot be undone — unless you use the Undo button immediately after.</p>
+    <div class="md-act">
+      <button class="btn btn-gho" onclick="closeClearMo()">Cancel</button>
+      <button class="btn btn-red" onclick="confirmClear()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Clear All Data
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- UNDO TOAST BAR -->
+<div id="undo-bar" style="position:fixed;bottom:var(--sp6);left:50%;transform:translateX(-50%) translateY(20px);background:var(--sur3);border:1px solid var(--bdr2);border-radius:var(--r-lg);padding:var(--sp3) var(--sp5);display:flex;align-items:center;gap:var(--sp4);z-index:300;opacity:0;pointer-events:none;transition:all .3s ease;box-shadow:0 8px 24px rgba(0,0,0,.4);min-width:300px">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--dan)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+  <span style="font-size:var(--text-sm);color:var(--tx);flex:1" id="undo-msg">All data cleared.</span>
+  <button class="btn btn-row btn-gho" onclick="undoClear()" style="padding:var(--sp1) var(--sp4);font-size:var(--text-sm)">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.99"/></svg>
+    Undo
+  </button>
+  <button onclick="hideUndoBar()" style="color:var(--txm);padding:var(--sp1)" aria-label="Dismiss">✕</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// FIREBASE CONFIG — paste your config values here OR use the
+// Event Config screen to enter them at runtime.
+// ════════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            '',   // AIzaSy...
+  authDomain:        '',   // project-id.firebaseapp.com
+  databaseURL:       '',   // https://project-id-default-rtdb.firebaseio.com
+  projectId:         '',   // project-id
+  storageBucketName: '',   // project-id.appspot.com (optional)
+  appId:             ''    // 1:123456789:web:abc...
+};
+
+// ── STATE ────────────────────────────────────────────────
+let cx = [];
+let activeDay = 'All';
+let rv = 'division';
+let moId = null;
+let moType = null;
+let roSortCol = 'bib';
+let roSortDir = 'asc';
+let cfg = { name:'Twilight Biathlon 2026', friStart:'21:30', satStart:'21:30', interval:300, penalty:300 };
+let undoData = null;
+let clearTimer = null;
+
+// ── FIREBASE STATE ───────────────────────────────────────
+let fbApp  = null;   // firebase.app instance
+let fbDb   = null;   // firebase.database instance
+let fbRef  = null;   // database reference for current event
+let fbEventId = null;
+let fbListeners = [];  // track active listeners so we can detach
+let fbConnected = false;
+let _suppressWrite = false; // prevent write-on-read loop
+
+// ── SQUAD HELPERS ────────────────────────────────────────
+function isStaff(squad)   { return parseInt(squad) >= 10 && parseInt(squad) <= 19; }
+function isSponsor(squad) { return parseInt(squad) >= 20 && parseInt(squad) <= 29; }
+function squadTag(squad) {
+  if(isStaff(squad))   return `<span class="badge bstf">STAFF</span>`;
+  if(isSponsor(squad)) return `<span class="badge bspn">SPONSOR</span>`;
+  return '';
+}
+function slotsPerSquad() { return Math.floor(3600 / cfg.interval); }
+
+// ── CHANGE TRACKING ───────────────────────────────────────
+function trackChange(c, field, oldVal, newVal) {
+  const origKey = '_orig' + field.charAt(0).toUpperCase() + field.slice(1);
+  if (c[origKey] === undefined) c[origKey] = oldVal;
+  if (!c._changes) c._changes = [];
+  c._changes = c._changes.filter(ch => ch.field !== field);
+  if (String(newVal) !== String(c[origKey])) {
+    c._changes.push({ field, from: c[origKey], to: newVal });
+  }
+}
+
+function chgBadgeHTML(c) {
+  if (!c._changes || !c._changes.length) return '';
+  const popId = 'pop-' + c.id;
+  const items = c._changes.map(ch =>
+    `<div class="chg-item"><strong>${ch.field}:</strong> ${esc(String(ch.from))} → ${esc(String(ch.to))}</div>`
+  ).join('');
+  return `<span class="chg-wrap">
+    <button class="chg-badge" onclick="togglePop('${popId}',event)" title="Field changes">!</button>
+    <div class="chg-pop" id="${popId}">
+      <div class="chg-pop-title">Changes</div>${items}
+    </div>
+  </span>`;
+}
+
+function togglePop(id, e) {
+  e.stopPropagation();
+  const el = document.getElementById(id);
+  if (!el) return;
+  const wasOpen = el.classList.contains('open');
+  document.querySelectorAll('.chg-pop.open').forEach(p => p.classList.remove('open'));
+  if (!wasOpen) el.classList.add('open');
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.chg-pop.open').forEach(p => p.classList.remove('open'));
+});
+
+// ════════════════════════════════════════════════════════════
+//  FIREBASE INTEGRATION
+// ════════════════════════════════════════════════════════════
+
+function setSyncStatus(state, label) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-lbl');
+  dot.className = 'sync-dot ' + state;
+  lbl.textContent = label;
+}
+
+function connectFirebase(fromFields) {
+  // Pull config from UI fields if called from the button
+  const config = fromFields === false ? FIREBASE_CONFIG : {
+    apiKey:       document.getElementById('fb-apiKey').value.trim()    || FIREBASE_CONFIG.apiKey,
+    authDomain:   document.getElementById('fb-authDomain').value.trim()|| FIREBASE_CONFIG.authDomain,
+    databaseURL:  document.getElementById('fb-dbURL').value.trim()     || FIREBASE_CONFIG.databaseURL,
+    projectId:    document.getElementById('fb-projectId').value.trim() || FIREBASE_CONFIG.projectId,
+    appId:        document.getElementById('fb-appId').value.trim()     || FIREBASE_CONFIG.appId,
+  };
+
+  if (!config.apiKey || !config.databaseURL) {
+    setFbStatus('Missing API Key or Database URL.', true);
+    return;
+  }
+
+  disconnectFirebase();
+
+  try {
+    // Delete existing app if re-connecting
+    try { firebase.app().delete(); } catch(e) {}
+    fbApp = firebase.initializeApp(config);
+    fbDb  = firebase.database(fbApp);
+
+    // Enable offline persistence — data cached to IndexedDB
+    fbDb.enablePersistence().catch(err => {
+      // FAILED_PRECONDITION: multiple tabs open — only first tab gets persistence
+      // UNIMPLEMENTED: browser doesn't support it
+      console.warn('Firebase persistence:', err.code);
+    });
+
+    // Generate a stable event ID from event name + year, or use stored one
+    fbEventId = cfg.name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,40)
+                + '-' + new Date().getFullYear();
+    fbRef = fbDb.ref('events/' + fbEventId);
+
+    // Monitor connection state
+    fbDb.ref('.info/connected').on('value', snap => {
+      fbConnected = snap.val() === true;
+      setSyncStatus(fbConnected ? 'online' : 'offline', fbConnected ? 'Online' : 'Offline');
+    });
+
+    // Subscribe to competitors
+    const cxListener = fbRef.child('competitors').on('value', snap => {
+      const data = snap.val();
+      if (data && !_suppressWrite) {
+        cx = Object.values(data).map(c => ({
+          ...c,
+          _changes: c._changes || [],
+          squad: parseInt(c.squad) || 1,
+          obstacles: parseInt(c.obstacles) || 0,
+          dnf: !!c.dnf,
+          startMs: c.startMs || null,
+          finishMs: c.finishMs || null,
+        }));
+        rebuildFilters(); renderAll();
+      }
+    });
+
+    // Subscribe to config
+    const cfgListener = fbRef.child('config').on('value', snap => {
+      const data = snap.val();
+      if (data && !_suppressWrite) {
+        cfg = { ...cfg, ...data };
+        syncCfgToUI();
+        renderAll();
+      }
+    });
+
+    fbListeners = [
+      { ref: fbRef.child('competitors'), event: 'value', cb: cxListener },
+      { ref: fbRef.child('config'),      event: 'value', cb: cfgListener },
+    ];
+
+    fbConnected = true;
+    setFbStatus('Connected to event: ' + fbEventId);
+    setSyncStatus('online', 'Online');
+    const box = document.getElementById('eid-box');
+    if (box) { box.style.display = 'flex'; document.getElementById('eid-val').textContent = fbEventId; }
+    toast('Firebase connected');
+  } catch (err) {
+    setFbStatus('Error: ' + err.message, true);
+    setSyncStatus('offline', 'Error');
+  }
+}
+
+function disconnectFirebase() {
+  fbListeners.forEach(l => l.ref.off(l.event, l.cb));
+  fbListeners = [];
+  if (fbDb) { try { fbDb.ref('.info/connected').off(); } catch(e){} }
+  if (fbApp) { try { fbApp.delete(); } catch(e){} }
+  fbApp = null; fbDb = null; fbRef = null; fbEventId = null; fbConnected = false;
+  setSyncStatus('offline', 'Local');
+  setFbStatus('Disconnected — running in local mode.');
+  const box = document.getElementById('eid-box');
+  if (box) box.style.display = 'none';
+}
+
+function setFbStatus(msg, isErr) {
+  const el = document.getElementById('fb-status');
+  if (el) { el.textContent = msg; el.style.color = isErr ? 'var(--dan)' : 'var(--txm)'; }
+}
+
+// Write all competitors to Firebase
+function fbWriteCx() {
+  if (!fbRef || !fbConnected) return;
+  _suppressWrite = true;
+  const data = {};
+  cx.forEach(c => {
+    // Strip private keys that can't serialize cleanly
+    const { _wantSlot, ...clean } = c;
+    data[c.id] = clean;
+  });
+  fbRef.child('competitors').set(data)
+    .then(() => { _suppressWrite = false; setSyncStatus('online', 'Online'); })
+    .catch(err => { _suppressWrite = false; console.error(err); setSyncStatus('offline', 'Sync error'); });
+  setSyncStatus('syncing', 'Saving…');
+}
+
+// Write a single competitor field — more efficient than full write
+function fbWriteOne(c) {
+  if (!fbRef || !fbConnected) return;
+  const { _wantSlot, ...clean } = c;
+  fbRef.child('competitors/' + c.id).set(clean)
+    .catch(err => console.error('fbWriteOne:', err));
+}
+
+// Write config to Firebase
+function fbWriteCfg() {
+  if (!fbRef || !fbConnected) return;
+  fbRef.child('config').set(cfg).catch(err => console.error('fbWriteCfg:', err));
+}
+
+function syncCfgToUI() {
+  const nm  = document.getElementById('cfg-nm');   if (nm)  nm.value  = cfg.name;
+  const fri = document.getElementById('cfg-fri');  if (fri) fri.value = cfg.friStart;
+  const sat = document.getElementById('cfg-sat');  if (sat) sat.value = cfg.satStart;
+  const ivl = document.getElementById('cfg-ivl');  if (ivl) ivl.value = fmtMMSS(cfg.interval);
+  const pen = document.getElementById('cfg-pen');  if (pen) pen.value = fmtMMSS(cfg.penalty);
+  const ivv = document.getElementById('ivl-v');    if (ivv) ivv.value = fmtMMSS(cfg.interval);
+  const sbe = document.getElementById('sb-evt');   if (sbe) sbe.textContent = cfg.name;
+}
+
+// ── CLEAR / UNDO ─────────────────────────────────────────
+function openClearMo() {
+  document.getElementById('clr-count').textContent = cx.length;
+  document.getElementById('mo-clear').classList.add('open');
+}
+function closeClearMo() { document.getElementById('mo-clear').classList.remove('open'); }
+
+function confirmClear() {
+  undoData = JSON.parse(JSON.stringify(cx));
+  cx = [];
+  if (fbRef && fbConnected) {
+    fbRef.child('competitors').remove().catch(err => console.error(err));
+  }
+  closeClearMo();
+  rebuildFilters(); renderAll();
+  showUndoBar();
+  toast('All data cleared');
+}
+
+function showUndoBar() {
+  const bar = document.getElementById('undo-bar');
+  bar.style.opacity = '1'; bar.style.pointerEvents = 'all';
+  bar.style.transform = 'translateX(-50%) translateY(0)';
+  if (clearTimer) clearTimeout(clearTimer);
+  clearTimer = setTimeout(hideUndoBar, 15000);
+}
+
+function hideUndoBar() {
+  const bar = document.getElementById('undo-bar');
+  bar.style.opacity = '0'; bar.style.pointerEvents = 'none';
+  bar.style.transform = 'translateX(-50%) translateY(20px)';
+  if (clearTimer) { clearTimeout(clearTimer); clearTimer = null; }
+  undoData = null;
+}
+
+function undoClear() {
+  if (undoData) {
+    cx = undoData; undoData = null;
+    fbWriteCx();
+    rebuildFilters(); renderAll();
+    toast('Data restored — ' + cx.length + ' competitors');
+  }
+  hideUndoBar();
+}
+
+// ── SAMPLE DATA ──────────────────────────────────────────
+function loadSample() {
+  const rows = [
+    ['Hakanson','Seth','2-GUN','Friday','1','L','9186071993','seth.hakanson@yahoo.com','12014 E 114th Pl N Owasso OK','Paid','Approved',''],
+    ['Jones','Parker','NV 2-GUN','Friday','1','2XL','4055039969','prjones0114@gmail.com','18900 Wildhorse Dr Harrah OK 73045','Paid','Approved',''],
+    ['Pape','Chad','2-GUN','Friday','1','XL','4055703655','chadp488@gmail.com','5340 Starling Way OKC OK 73179','Paid','Approved',''],
+    ['Fink','Josh','2-GUN','Friday','1','L','4023690629','joshfink28@yahoo.com','315 S Baltimore Ave Hastings NE 68901','Paid','Approved',''],
+    ['Munson','Gary','2-GUN','Friday','1','XL','4054132667','garymunson405@gmail.com','944 Fillmore Piedmont OK 73078','Paid','Approved',''],
+    ['Henson','Cassie','2-GUN','Friday','1','S','9199208108','cassie.l.henson@gmail.com','2641 NW 15th St OKC OK 73107','Paid','Approved',''],
+    ['Jaradat','Omar','2-GUN','Friday','1','M','3202193649','dromar625@proton.me','10761 Smetana Rd Minnetonka MN 55343','Paid','Approved',''],
+    ['Marple','Jacob','2-GUN','Friday','1','XL','9124335995','jacob.marple1@gmail.com','4601 Castle Bay Cv Del City OK','Paid','Approved',''],
+    ['Fairless','Carter','2-GUN','Friday','1','M','9186062848','carter.fairless@gmail.com','13604 W 43rd Pl S Tulsa OK','Paid','Approved',''],
+    ['Ryan','Jeff','PCC','Friday','1','XL','4055961939','ryanjxxxx@yahoo.com','14612 Westlake Dr Piedmont OK 73078','Paid','Approved',''],
+    ['Henson','Chris','2-GUN','Friday','2','L','4056134228','cdub.henson@gmail.com','2641 NW 15th St OKC OK 73107','Paid','Approved',''],
+    ['Hammond','Brett','2-GUN','Friday','2','M','2063049966','brett.hammond@gmail.com','7824 Tomahawk Rd Prairie Village KS 66208','Paid','Approved',''],
+    ['Patrin','Jack','2-GUN','Friday','2','2XL','6517832032','jacky.patrin@gmail.com','1309 Van Buren Saint Paul MN 55104','Paid','Approved',''],
+    ['Wilkerson','Jim','PCC','Friday','2','L','4058020869','jim.wilkerson.01@gmail.com','14800 Westlake Dr Piedmont OK 73078','Paid','Approved',''],
+    ['Stowell','Mason','2-GUN','Friday','2','XL','9186305725','masonstowell1996@gmail.com','PO Box 11 Cleveland OK 74020','Paid','Approved',''],
+    ['Isidro','Andres','NV 2-GUN','Friday','2','L','6362224518','aaisidro90@gmail.com','601 Clarke St Winona MN 55987','Paid','Approved',''],
+    ['Wheaton','Brent','2-GUN','Friday','2','L','3083404573','wheatonbc@gmail.com','2217 Mohawk Dr Laramie WY 82072','Paid','Approved',''],
+    ['Seagraves','Joe','2-GUN','Friday','2','2XL','4059212102','jake.seagraves53@gmail.com','13131 Whitebud Pl Choctaw OK 73020','Paid','Approved',''],
+    ['Leach','Nick','2-GUN','Friday','2','L','5803367193','nleach@sbcglobal.net','PO Box 1006 Perry OK 73077','Paid','Approved',''],
+    ['Davis','Tim','2-GUN','Friday','2','S','9186256636','toy4rnr@gmail.com','2738 Woodward Blvd Tulsa OK 74114','Paid','Approved',''],
+    ['Jenkins','Austin','NV 2-GUN','Friday','3','L','5046386608','elloimjustaworm@gmail.com','5052 County Road 3506 Quinlan TX 75474','Paid','Approved',''],
+    ['Schultz','Nick','NV 2-GUN','Friday','3','S','2188396504','pistolfreak@hotmail.com','91850 Champagne Rd Kerrick MN 55756','Paid','Approved',''],
+    ['Hood','Charlie','NV 2-GUN','Friday','3','L','9186944626','av84fun@outlook.com','3412 S Tamarack Ave Broken Arrow OK 74012','Paid','Approved',''],
+    ['Weingart','Nick','NV 2-GUN','Friday','3','L','2693260671','weingartnicholas@gmail.com','188 Thompson Ave W West Saint Paul MN 55118','Paid','Approved',''],
+    ['Teague','Jeremy','2-GUN','Friday','3','L','9186986909','hkboomstick91@gmail.com','11929 N 97th East Ave Collinsville OK 74021','Paid','Approved',''],
+    ['Busby','Sian','2-GUN','Friday','3','L','4059900469','busby.sian@gmail.com','980139 S 3420 Rd Meeker OK 74855','Unpaid','',''],
+    ['Kiemen','Ray','NV PCC','Friday','3','M','7633709951','kiemenr@yahoo.com','9124 Statesman Rd Fort Belvoir VA 22060','Unpaid','',''],
+    ['Duckworth','Mustang','NV 2-GUN','Friday','3','L','9032729717','mustangduckk@gmail.com','153 FR 2121 Reno TX 75462','Paid','Approved',''],
+    ['Loftiss','Jacob','2-GUN','Friday','3','L','5805151446','jacob.loftiss1@gmail.com','8900 Park Hills Dr Arcadia OK 73007','Paid','Approved',''],
+    ['RO Lead','Event','2-GUN','Friday','10','M','4051234567','ro@rng.local','','Waived','Approved',''],
+    ['Safety','Officer','PCC','Friday','10','L','4059876543','safety@rng.local','','Waived','Approved',''],
+    ['Sponsor','Rep A','2-GUN','Friday','20','XL','4050001111','sponsor.a@vendor.com','','Waived','Approved',''],
+    ['Anderson','Blake','2-GUN','Saturday','1','L','4051112222','b.anderson@gmail.com','1001 N Lincoln Blvd OKC OK 73104','Paid','Approved',''],
+    ['Nguyen','Minh','NV 2-GUN','Saturday','1','M','5803334444','minh.nguyen@gmail.com','742 Evergreen Ter Springfield','Paid','Approved',''],
+    ['Cortez','Maria','PCC','Saturday','1','S','9185556666','mcortez@yahoo.com','403 W Main St Claremore OK 74017','Paid','Approved',''],
+    ['Brewer','Kyle','2-GUN','Saturday','1','XL','4057778888','kbrewer05@hotmail.com','2020 Ridgecrest Dr Moore OK 73160','Paid','Approved',''],
+    ['Park','Jae','NV PCC','Saturday','1','M','4059990000','jaepark@proton.me','5544 E 41st St Tulsa OK 74135','Paid','Approved',''],
+    ['Fletcher','Dana','2-GUN','Saturday','1','L','5802221133','dana.fletcher@gmail.com','800 Scissortail Dr OKC OK 73129','Paid','Pending',''],
+    ['Torres','Ramos','NV 2-GUN','Saturday','1','M','9183334455','rtorres@outlook.com','1313 Mockingbird Ln Dallas TX 75201','Unpaid','',''],
+    ['Caldwell','Travis','2-GUN','Saturday','1','2XL','4055566677','travis.caldwell@yahoo.com','PO Box 443 Enid OK 73701','Paid','Approved',''],
+    ['Morrison','Zach','2-GUN','Saturday','2','L','4058887766','zmorrison@gmail.com','17 Oak Ridge Dr Edmond OK 73013','Paid','Approved',''],
+    ['Walsh','Bridget','NV 2-GUN','Saturday','2','S','9186665544','bwalsh@yahoo.com','222 S Main St Pawhuska OK 74056','Paid','Approved',''],
+    ['Nakamura','Yuki','PCC','Saturday','2','M','4054443322','ynakamura@proton.me','PO Box 77 Woodward OK 73802','Paid','Approved',''],
+    ['Gibson','Darren','2-GUN','Saturday','2','XL','5801234567','dgibson@hotmail.com','711 Colorado Ave Woodward OK 73801','Paid','Approved',''],
+    ['Reyes','Sofia','NV 2-GUN','Saturday','2','S','4053214567','sreyes@gmail.com','1600 E Robinson St Norman OK 73071','Unpaid','',''],
+    ['RO Sat','Lead','2-GUN','Saturday','11','M','4056543210','ro.sat@rng.local','','Waived','Approved',''],
+  ];
+  cx = rows.map((r,i) => mkC(r,i));
+  fbWriteCx();
+  rebuildFilters(); renderAll();
+  document.getElementById('imp-msg').textContent = cx.length + ' competitors loaded';
+  toast(cx.length + ' competitors loaded');
+}
+
+function mkC(r, i) {
+  return { id:i, last:r[0], first:r[1], div:r[2], day:r[3],
+    squad:parseInt(r[4])||1, slot:0, shirt:r[5]||'',
+    phone:r[6]||'', email:r[7]||'', address:r[8]||'',
+    paid:r[9]||'', approval:r[10]||'', pmm:r[11]||'',
+    bib:'', ciStatus:'Pending',
+    startMs:null, finishMs:null, obstacles:0, dnf:false,
+    _changes:[] };
+}
+
+// ── BIB / SLOT ASSIGNMENT ────────────────────────────────
+function assignBibs() {
+  const groups = {};
+  cx.forEach(c => {
+    const k = c.day + '_' + c.squad;
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(c);
+  });
+  Object.values(groups).forEach(list => {
+    list.sort((a,b) => (a._wantSlot||9999) - (b._wantSlot||9999) || a.id - b.id);
+    list.forEach((c,i) => { c.slot = i + 1; c.bib = p2(c.squad) + p2(c.slot); delete c._wantSlot; });
+  });
+}
+
+function schedStart(c) {
+  const base = c.day === 'Saturday' ? cfg.satStart : cfg.friStart;
+  const [h,m] = base.split(':').map(Number);
+  const sec = h*3600 + m*60 + (c.slot-1)*cfg.interval;
+  const hh = Math.floor(sec/3600)%24, mm = Math.floor((sec%3600)/60);
+  return p2(hh)+':'+p2(mm);
+}
+
+function emptySlots(squad, day, filledSlots) {
+  const total = slotsPerSquad(), slots = [];
+  for (let s = filledSlots + 1; s <= total; s++) {
+    const bib = p2(squad) + p2(s);
+    const base = day === 'Saturday' ? cfg.satStart : cfg.friStart;
+    const [h,m] = base.split(':').map(Number);
+    const sec = h*3600 + m*60 + (s-1)*cfg.interval;
+    const hh = Math.floor(sec/3600)%24, mm = Math.floor((sec%3600)/60);
+    slots.push({ squad, day, slot:s, bib, sched:p2(hh)+':'+p2(mm) });
+  }
+  return slots;
+}
+
+function elapsedMs(startMs, finishMs) {
+  let diff = finishMs - startMs;
+  return diff < 0 ? diff + 86400000 : diff;
+}
+
+// ── NAV ──────────────────────────────────────────────────
+const titles = {checkin:'Check-In',run:'Run Scoring',results:'Results',roster:'Roster',config:'Event Config'};
+function nav(page, el) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-i').forEach(n=>n.classList.remove('on'));
+  document.getElementById('page-'+page).classList.add('active');
+  if(el) el.classList.add('on');
+  document.getElementById('tb-title').textContent = titles[page]||page;
+  renderAll();
+}
+
+function setDay(day, btn) {
+  activeDay = day;
+  document.querySelectorAll('.topbar .day-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderAll();
+}
+function setRV(v, btn) {
+  rv = v;
+  document.querySelectorAll('#page-results .day-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderRes();
+}
+function byDay(list) { return activeDay==='All' ? list : list.filter(c=>c.day===activeDay); }
+
+function renderAll() { assignBibs(); renderCI(); renderRun(); renderRes(); renderRo(); }
+
+// ── CHECK-IN ─────────────────────────────────────────────
+function renderCI() {
+  const q=(document.getElementById('ci-q').value||'').toLowerCase();
+  const dv=document.getElementById('ci-dv').value;
+  const sq=document.getElementById('ci-sq').value;
+  const st=document.getElementById('ci-st').value;
+  let list=byDay(cx);
+  if(q) list=list.filter(c=>(c.last+' '+c.first).toLowerCase().includes(q));
+  if(dv) list=list.filter(c=>c.div===dv);
+  if(sq) list=list.filter(c=>String(c.squad)===sq);
+  if(st) list=list.filter(c=>c.ciStatus===st);
+  list.sort((a,b)=>a.last.localeCompare(b.last));
+  document.getElementById('ci-cnt').textContent = list.length+' competitors';
+  const tb=document.getElementById('ci-tb');
+  if(!list.length){tb.innerHTML=eRow(9,'No competitors match');return;}
+  tb.innerHTML = list.map(c=>{
+    const sched = schedStart(c);
+    const tag   = squadTag(c.squad);
+    return `<tr>
+      <td><input class="editable td-n" value="${esc(c.last)}" onchange="ciEdit(${c.id},'last',this.value)" style="width:110px"></td>
+      <td><input class="editable" value="${esc(c.first)}" onchange="ciEdit(${c.id},'first',this.value)" style="width:90px"></td>
+      <td><select class="editable" onchange="ciEdit(${c.id},'div',this.value)">
+        ${['2-GUN','NV 2-GUN','PCC','NV PCC'].map(d=>`<option${d===c.div?' selected':''}>${d}</option>`).join('')}
+      </select></td>
+      <td>
+        <input class="editable" type="number" min="1" max="99" value="${c.squad}" onchange="ciEditSquad(${c.id},this.value)" style="width:52px">
+        ${tag}
+      </td>
+      <td style="color:var(--txm);font-variant-numeric:tabular-nums">${sched}</td>
+      <td>${c.shirt||'—'}</td>
+      <td><select class="editable" onchange="ciEdit(${c.id},'paid',this.value)">
+        ${['Paid','Unpaid','Waived'].map(p=>`<option${p===c.paid?' selected':''}>${p}</option>`).join('')}
+      </select></td>
+      <td>${ciBdg(c.ciStatus)}</td>
+      <td><div class="td-act">
+        <button class="btn btn-row btn-grn" onclick="setCi(${c.id},'Checked In')">✓ Check In</button>
+        <button class="btn btn-row btn-gho" onclick="setCi(${c.id},'Late')">Late</button>
+        <button class="btn btn-row btn-red" onclick="setCi(${c.id},'No Show')">No Show</button>
+        ${chgBadgeHTML(c)}
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function ciEdit(id, field, val) {
+  const c=cx.find(x=>x.id===id); if(!c) return;
+  trackChange(c, field, c[field], val);
+  c[field]=val; fbWriteOne(c); renderAll(); toast(c.last+' updated');
+}
+function ciEditSquad(id, val) {
+  const c=cx.find(x=>x.id===id); if(!c) return;
+  trackChange(c, 'squad', c.squad, parseInt(val)||1);
+  c.squad=parseInt(val)||1;
+  fbWriteOne(c); renderAll(); toast(c.last+' moved to Squad '+p2(c.squad));
+}
+function setCi(id,s){
+  const c=cx.find(x=>x.id===id); if(!c) return;
+  c.ciStatus=s; fbWriteOne(c); renderCI(); updateStats(); toast(c.last+' → '+s);
+}
+
+// ── RUN SCORING ──────────────────────────────────────────
+function renderRun() {
+  const q=(document.getElementById('run-q').value||'').toLowerCase();
+  const sq=document.getElementById('run-sq').value;
+  let list=byDay(cx).filter(c=>c.ciStatus!=='Pending'&&c.ciStatus!=='No Show');
+  if(q) list=list.filter(c=>(c.last+' '+c.first+c.bib).toLowerCase().includes(q));
+  if(sq) list=list.filter(c=>String(c.squad)===sq);
+  list.sort((a,b)=>{ const d=a.squad-b.squad; return d!==0?d:a.slot-b.slot; });
+  updateStats(list); updateNextUp(list);
+  const squads=[...new Set(list.map(c=>c.squad))].sort((a,b)=>a-b);
+  const now=Date.now();
+  const tb=document.getElementById('run-tb');
+  if(!list.length){tb.innerHTML=eRow(12,'No checked-in competitors');return;}
+  let html='';
+  squads.forEach(squad=>{
+    const grp=list.filter(c=>c.squad===squad);
+    const day=grp[0].day;
+    const sqLabel=isStaff(squad)?'STAFF · ':isSponsor(squad)?'SPONSOR · ':'';
+    html+=`<tr class="squad-hdr"><td colspan="12">SQUAD ${p2(squad)} · ${sqLabel}${day} · ${grp.length}/${slotsPerSquad()} slots filled</td></tr>`;
+    grp.forEach(c=>{
+      const sched=schedStart(c);
+      const startStr=c.startMs?msTime(c.startMs):'—';
+      const finishStr=c.finishMs?msTime(c.finishMs):'—';
+      let tocCell='—';
+      if(c.startMs&&!c.finishMs&&!c.dnf){
+        const el=now-c.startMs;
+        const cls=el>7200000?'t-al':el>5400000?'t-wn':'t-ok';
+        tocCell=`<span class="${cls}" data-start="${c.startMs}"><span class="dot"></span>${fmtMs(el)}</span>`;
+      } else if(c.startMs&&c.finishMs){
+        tocCell=`<span class="td-t">${fmtMs(elapsedMs(c.startMs,c.finishMs))}</span>`;
+      }
+      const dnfCell=c.dnf?`<span class="badge bdnf">DNF</span>`:'';
+      const tag=squadTag(c.squad);
+      html+=`<tr>
+        <td><span class="td-b">${c.bib}</span>${tag}</td>
+        <td class="td-n">${c.last}</td><td>${c.first}</td>
+        <td><span class="badge ${dc(c.div)}">${c.div}</span></td>
+        <td>${p2(c.squad)}</td>
+        <td style="color:var(--txm);font-variant-numeric:tabular-nums">${sched}</td>
+        <td class="td-t">${startStr}</td><td class="td-t">${finishStr}</td>
+        <td><div class="obs-c">
+          <button class="obs-b" onclick="adjObs(${c.id},-1)">−</button>
+          <span class="obs-v">${c.obstacles}</span>
+          <button class="obs-b" onclick="adjObs(${c.id},1)">+</button>
+        </div></td>
+        <td>${tocCell}</td><td>${dnfCell}</td>
+        <td><div class="td-act">
+          ${!c.startMs&&!c.dnf?`<button class="btn btn-row btn-blu" onclick="doStart(${c.id})">▶ Start</button>`:''}
+          ${c.startMs&&!c.finishMs&&!c.dnf?`<button class="btn btn-row btn-grn" onclick="doFinish(${c.id})">⏹ Finish</button>`:''}
+          ${c.startMs&&!c.finishMs&&!c.dnf?`<button class="btn btn-row btn-red" onclick="doDNF(${c.id})">DNF</button>`:''}
+          <button class="btn btn-row btn-gho" onclick="openRunMo(${c.id})">Edit</button>
+          ${chgBadgeHTML(c)}
+        </div></td>
+      </tr>`;
+    });
+    emptySlots(squad, day, grp.length).forEach(e=>{
+      html+=`<tr class="squad-empty">
+        <td style="color:var(--txf)">${e.bib}</td>
+        <td colspan="4" style="color:var(--txf)">— open slot —</td>
+        <td style="color:var(--txf)">${e.sched}</td>
+        <td colspan="6"></td>
+      </tr>`;
+    });
+  });
+  tb.innerHTML=html;
+}
+
+function doStart(id){const c=cx.find(x=>x.id===id);if(c&&!c.startMs){c.startMs=Date.now();fbWriteOne(c);renderRun();toast(c.last+' started');}}
+function doFinish(id){
+  const c=cx.find(x=>x.id===id);
+  if(c&&c.startMs&&!c.finishMs){
+    c.finishMs=Date.now(); fbWriteOne(c); renderRun(); renderRes();
+    toast(c.last+' finished — '+fmtMs(elapsedMs(c.startMs,c.finishMs)));
+  }
+}
+function doDNF(id){const c=cx.find(x=>x.id===id);if(c){c.dnf=true;fbWriteOne(c);renderRun();toast(c.last+' → DNF');}}
+function adjObs(id,d){const c=cx.find(x=>x.id===id);if(c){c.obstacles=Math.max(0,c.obstacles+d);fbWriteOne(c);renderRun();renderRes();}}
+
+function updateStats(list) {
+  const l=list||byDay(cx).filter(c=>c.ciStatus!=='Pending'&&c.ciStatus!=='No Show');
+  document.getElementById('s-tot').textContent=l.length;
+  document.getElementById('s-oc').textContent=l.filter(c=>c.startMs&&!c.finishMs&&!c.dnf).length;
+  document.getElementById('s-cp').textContent=l.filter(c=>c.startMs&&(c.finishMs||c.dnf)).length;
+  document.getElementById('s-rm').textContent=l.filter(c=>!c.startMs&&!c.dnf).length;
+}
+
+function updateNextUp(list) {
+  const next=(list||[]).find(c=>!c.startMs&&!c.dnf);
+  if(next){
+    document.getElementById('nu-nm').textContent=next.last+', '+next.first+' · Bib '+next.bib;
+    document.getElementById('nu-dt').textContent='Squad '+p2(next.squad)+' · Slot '+next.slot+' · Sched '+schedStart(next);
+  } else {
+    document.getElementById('nu-nm').textContent='All competitors released';
+    document.getElementById('nu-dt').textContent='';
+  }
+}
+
+// ── RUN SCORING EDIT MODAL ───────────────────────────────
+function openRunMo(id) {
+  const c=cx.find(x=>x.id===id); if(!c) return;
+  moId=id; moType='run';
+  document.getElementById('mo-t').textContent='Edit — '+c.last+', '+c.first;
+  const startVal=c.startMs?msTime(c.startMs):'';
+  const finishVal=c.finishMs?msTime(c.finishMs):'';
+  document.getElementById('mo-body').innerHTML=`
+    <div class="f-row"><label class="f-lbl">Bib Number — insert at slot (SSLL format, e.g. 0103)</label>
+      <input class="f-inp" id="m-bib" value="${c.bib}" placeholder="0103"></div>
+    <div class="f-row"><label class="f-lbl">Start Time (HH:MM:SS 24-hr)</label>
+      <input class="f-inp" id="m-start" value="${startVal}" placeholder="22:00:00"></div>
+    <div class="f-row"><label class="f-lbl">Finish Time (HH:MM:SS 24-hr)</label>
+      <input class="f-inp" id="m-finish" value="${finishVal}" placeholder="23:45:00"></div>
+    <div class="f-row"><label class="f-lbl">Obstacles Skipped</label>
+      <input class="f-inp" id="m-obs" type="number" min="0" value="${c.obstacles}"></div>
+    <div class="f-row" style="flex-direction:row;align-items:center;gap:var(--sp3)">
+      <input type="checkbox" id="m-dnf" ${c.dnf?'checked':''} style="width:16px;height:16px;cursor:pointer">
+      <label class="f-lbl" for="m-dnf" style="cursor:pointer">Mark as DNF</label>
+    </div>
+    <p style="font-size:var(--text-xs);color:var(--txm);margin-top:var(--sp2)">Changing the bib inserts at the target slot. Competitors below shift down one position.</p>`;
+  document.getElementById('mo-edit').classList.add('open');
+}
+
+function saveMo() { if(moType==='run') saveRunMo(); closeMo(); }
+
+function saveRunMo() {
+  const c=cx.find(x=>x.id===moId); if(!c) return;
+  const newBib=document.getElementById('m-bib').value.trim();
+  const startStr=document.getElementById('m-start').value.trim();
+  const finishStr=document.getElementById('m-finish').value.trim();
+  c.obstacles=parseInt(document.getElementById('m-obs').value)||0;
+  c.dnf=document.getElementById('m-dnf').checked;
+  if(startStr) c.startMs=timeStrToMs(startStr); else c.startMs=null;
+  if(finishStr) c.finishMs=timeStrToMs(finishStr); else c.finishMs=null;
+  if(c.startMs&&c.finishMs&&c.finishMs<c.startMs) c.finishMs+=86400000;
+  if(newBib && newBib!==c.bib && /^\d{4}$/.test(newBib)){
+    const newSquad=parseInt(newBib.substring(0,2));
+    const wantSlot=parseInt(newBib.substring(2,4));
+    cx.forEach(other=>{
+      if(other.id!==c.id && other.squad===newSquad && other.day===c.day && other.slot>=wantSlot)
+        other._wantSlot = other.slot + 1;
+    });
+    c.squad=newSquad; c._wantSlot=wantSlot;
+    toast('Bib changed → Squad '+p2(newSquad)+', Slot '+p2(wantSlot));
+  }
+  fbWriteCx(); renderAll(); toast(c.last+' updated');
+}
+
+function timeStrToMs(s) {
+  const parts=s.split(':').map(Number);
+  const h=parts[0]||0,m=parts[1]||0,sec=parts[2]||0;
+  const now=new Date(); now.setHours(h,m,sec,0); return now.getTime();
+}
+function closeMo(){document.getElementById('mo-edit').classList.remove('open');moId=null;moType=null;}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeMo();closeClearMo();}});
+
+// ── RESULTS ──────────────────────────────────────────────
+function renderRes() {
+  const dv=document.getElementById('res-dv').value;
+  let list=byDay(cx).filter(c=>c.finishMs&&c.startMs&&!isStaff(c.squad)&&!isSponsor(c.squad));
+  let dnfList=byDay(cx).filter(c=>c.dnf&&!isStaff(c.squad)&&!isSponsor(c.squad));
+  if(dv){list=list.filter(c=>c.div===dv);dnfList=dnfList.filter(c=>c.div===dv);}
+  list.forEach(c=>{c.rawSec=elapsedMs(c.startMs,c.finishMs)/1000;c.penSec=c.obstacles*cfg.penalty;c.runSec=c.rawSec+c.penSec;});
+  const tb=document.getElementById('res-tb');
+  if(!list.length&&!dnfList.length){tb.innerHTML=eRow(10,'No finishers yet');return;}
+  if(rv==='overall'){
+    list.sort((a,b)=>a.runSec-b.runSec);
+    tb.innerHTML=list.map((c,i)=>resRow(c,i+1)).join('')+dnfList.map(c=>resRow(c,null)).join('');
+  } else {
+    const divs=[...new Set([...list,...dnfList].map(c=>c.div))].sort();
+    tb.innerHTML=divs.map(div=>{
+      const g=list.filter(c=>c.div===div).sort((a,b)=>a.runSec-b.runSec);
+      const gd=dnfList.filter(c=>c.div===div);
+      return `<tr class="squad-hdr"><td colspan="10">${div}</td></tr>`
+        +g.map((c,i)=>resRow(c,i+1)).join('')+gd.map(c=>resRow(c,null)).join('');
+    }).join('');
+  }
+}
+
+function resRow(c, rank) {
+  const rankStyle=rank===1?'color:var(--suc);font-weight:700':'color:var(--txm);font-weight:500';
+  const rankCell=rank!=null?rank:'<span class="badge bdnf">DNF</span>';
+  return `<tr>
+    <td style="${rankStyle}">${rankCell}</td>
+    <td><span class="td-b">${c.bib}</span>${squadTag(c.squad)}</td>
+    <td class="td-n">${c.last}${chgBadgeHTML(c)}</td><td>${c.first}</td>
+    <td><span class="badge ${dc(c.div)}">${c.div}</span></td>
+    <td>${p2(c.squad)}</td>
+    <td class="td-t">${c.rawSec!=null?fmtSec(c.rawSec):'—'}</td>
+    <td style="text-align:center">${c.obstacles}</td>
+    <td class="td-t" style="color:var(--dan)">${c.penSec>0?'+'+fmtSec(c.penSec):'—'}</td>
+    <td class="td-t" style="color:var(--suc);font-weight:700">${c.runSec!=null?fmtSec(c.runSec):'—'}</td>
+  </tr>`;
+}
+
+// ── ROSTER ───────────────────────────────────────────────
+function roSort(col) {
+  if(roSortCol===col){ roSortDir=roSortDir==='asc'?'desc':'asc'; }
+  else { roSortCol=col; roSortDir='asc'; }
+  ['bib','last','first'].forEach(c=>{
+    const el=document.getElementById('rh-'+c); if(!el) return;
+    el.classList.remove('sort-asc','sort-desc');
+    if(c===roSortCol) el.classList.add('sort-'+roSortDir);
+  });
+  renderRo();
+}
+
+function renderRo() {
+  const q=(document.getElementById('ro-q').value||'').toLowerCase();
+  const dv=document.getElementById('ro-dv').value;
+  let list=byDay(cx);
+  if(q) list=list.filter(c=>(c.last+' '+c.first+c.bib).toLowerCase().includes(q));
+  if(dv) list=list.filter(c=>c.div===dv);
+  list.sort((a,b)=>{
+    let av,bv;
+    if(roSortCol==='bib'){av=a.bib;bv=b.bib;}
+    else if(roSortCol==='last'){av=a.last.toLowerCase();bv=b.last.toLowerCase();}
+    else{av=a.first.toLowerCase();bv=b.first.toLowerCase();}
+    if(av<bv) return roSortDir==='asc'?-1:1;
+    if(av>bv) return roSortDir==='asc'?1:-1;
+    return 0;
+  });
+  const tb=document.getElementById('ro-tb');
+  if(!list.length){tb.innerHTML=eRow(11,'No competitors');return;}
+  tb.innerHTML=list.map(c=>`<tr>
+    <td><span class="td-b">${c.bib}</span>${squadTag(c.squad)}</td>
+    <td class="td-n">${c.last}${chgBadgeHTML(c)}</td><td>${c.first}</td>
+    <td><span class="badge ${dc(c.div)}">${c.div}</span></td>
+    <td>${c.day}</td><td>${p2(c.squad)}</td><td>${c.shirt||'—'}</td>
+    <td style="color:var(--txm)">${c.phone||'—'}</td>
+    <td style="color:var(--txm);font-size:11px">${c.email||'—'}</td>
+    <td>${paidBdg(c.paid)}</td>
+    <td style="color:var(--txm)">${c.approval||'—'}</td>
+  </tr>`).join('');
+}
+
+// ── CONFIG ───────────────────────────────────────────────
+function saveCfg(){
+  cfg.name=document.getElementById('cfg-nm').value;
+  cfg.friStart=document.getElementById('cfg-fri').value;
+  cfg.satStart=document.getElementById('cfg-sat').value;
+  cfg.interval=parseMMSS(document.getElementById('cfg-ivl').value);
+  cfg.penalty=parseMMSS(document.getElementById('cfg-pen').value);
+  document.getElementById('sb-evt').textContent=cfg.name;
+  document.getElementById('ivl-v').value=document.getElementById('cfg-ivl').value;
+  fbWriteCfg();
+  renderAll(); toast('Settings saved');
+}
+function applyIvl(){cfg.interval=parseMMSS(document.getElementById('ivl-v').value);renderAll();}
+
+function impCSV(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const lines=ev.target.result.split('\n').filter(l=>l.trim());
+    const rows=lines.slice(1).map(l=>l.split(',').map(v=>v.trim().replace(/^"|"$/g,'')));
+    cx=rows.filter(r=>r.length>=4&&r[0]).map((r,i)=>mkC(r,i));
+    fbWriteCx(); rebuildFilters(); renderAll();
+    document.getElementById('imp-msg').textContent=cx.length+' competitors imported';
+    toast(cx.length+' competitors imported');
+  };
+  reader.readAsText(file);
+  e.target.value='';
+}
+
+function expCSV(){
+  const list=byDay(cx).filter(c=>c.finishMs&&c.startMs);
+  list.forEach(c=>{c.rawSec=elapsedMs(c.startMs,c.finishMs)/1000;c.penSec=c.obstacles*cfg.penalty;c.runSec=c.rawSec+c.penSec;});
+  list.sort((a,b)=>a.runSec-b.runSec);
+  const rows=[['Bib','Last','First','Division','Squad','Raw Time','Obstacles','Penalty','Run Time']];
+  list.forEach(c=>rows.push([c.bib,c.last,c.first,c.div,p2(c.squad),fmtSec(c.rawSec),c.obstacles,fmtSec(c.penSec),fmtSec(c.runSec)]));
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(rows.map(r=>r.join(',')).join('\n'));
+  a.download='rng-results.csv'; a.click(); toast('Results exported');
+}
+
+// ── HELPERS ──────────────────────────────────────────────
+function dc(d){if(d==='2-GUN')return 'b2';if(d==='NV 2-GUN'||d==='NV PCC')return 'bnv';if(d==='PCC')return 'bpc';return 'bdv';}
+function paidBdg(p){return p==='Paid'?'<span class="badge bpa">Paid</span>':p==='Waived'?'<span class="badge bpd">Waived</span>':`<span class="badge bup">${p||'—'}</span>`;}
+function ciBdg(s){const m={'Checked In':'bin','Late':'blt','No Show':'bns','Pending':'bpd'};return `<span class="badge ${m[s]||'bpd'}">${s}</span>`;}
+function eRow(c,m){return `<tr><td colspan="${c}"><div class="es"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><p>${m}</p></div></td></tr>`;}
+function p2(n){return String(n).padStart(2,'0');}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function msTime(ms){const d=new Date(ms);return p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());}
+function fmtMs(ms){const s=Math.floor(Math.abs(ms)/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60;return h>0?`${p2(h)}:${p2(m)}:${p2(sec)}`:`${p2(m)}:${p2(sec)}`;}
+function fmtSec(s){return fmtMs(s*1000);}
+function parseMMSS(str){const p=(str||'').split(':').map(Number);return p.length===2?p[0]*60+(p[1]||0):(p[0]||0)*60;}
+function fmtMMSS(sec){return p2(Math.floor(sec/60))+':'+p2(sec%60);}
+
+function rebuildFilters(){
+  const squads=[...new Set(cx.map(c=>String(c.squad)))].sort((a,b)=>parseInt(a)-parseInt(b));
+  ['ci-sq','run-sq'].forEach(id=>{
+    const el=document.getElementById(id); if(!el) return;
+    const cur=el.value;
+    el.innerHTML='<option value="">All Squads</option>'+squads.map(s=>{
+      const sq=parseInt(s);
+      const lbl=isStaff(sq)?' (Staff)':isSponsor(sq)?' (Sponsor)':'';
+      return `<option value="${s}">Squad ${p2(sq)}${lbl}</option>`;
+    }).join('');
+    el.value=cur;
+  });
+}
+
+// ── LIVE TIMERS ──────────────────────────────────────────
+setInterval(()=>{
+  document.querySelectorAll('[data-start]').forEach(el=>{
+    const start=parseInt(el.dataset.start);
+    const elapsed=Date.now()-start;
+    const cls=elapsed>7200000?'t-al':elapsed>5400000?'t-wn':'t-ok';
+    const dot=el.querySelector('.dot');
+    el.className=cls; el.dataset.start=start; el.textContent=fmtMs(elapsed);
+    if(dot){el.insertBefore(dot,el.firstChild);}
+    else{const sp=document.createElement('span');sp.className='dot';el.insertBefore(sp,el.firstChild);}
+  });
+  updateStats();
+},1000);
+
+setInterval(()=>{
+  const list=byDay(cx).filter(c=>c.ciStatus!=='Pending'&&c.ciStatus!=='No Show').sort((a,b)=>{const d=a.squad-b.squad;return d!==0?d:a.slot-b.slot;});
+  const next=list.find(c=>!c.startMs&&!c.dnf);
+  const cd=document.getElementById('cd');
+  if(!next){cd.textContent='—';return;}
+  const sched=schedStart(next);
+  const[sh,sm]=sched.split(':').map(Number);
+  const now=new Date();
+  const diff=sh*3600+sm*60-(now.getHours()*3600+now.getMinutes()*60+now.getSeconds());
+  if(diff<=0){cd.textContent='RELEASE NOW';cd.style.color='var(--dan)';}
+  else{cd.textContent=fmtSec(diff);cd.style.color=diff<60?'var(--wrn)':'var(--pri)';}
+},1000);
+
+// ── THEME ────────────────────────────────────────────────
+function toggleTheme(){const h=document.documentElement;h.setAttribute('data-theme',h.getAttribute('data-theme')==='dark'?'light':'dark');}
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2500);}
+
+// ── INIT ─────────────────────────────────────────────────
+setSyncStatus('offline', 'Local');
+loadSample();
+
+// Auto-connect if hardcoded config is present
+if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL) {
+  connectFirebase(false);
+}
+</script>
+</body>
+</html>
