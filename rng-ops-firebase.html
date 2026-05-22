@@ -407,6 +407,11 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
   <div class="cfg-grid">
     <div class="cfg-c">
       <h3>Event Settings</h3>
+      <div class="f-row">
+        <label class="f-lbl">Event ID <span style="color:var(--txf);font-weight:400">(lowercase a–z, 0–9, hyphens; max 60 chars)</span></label>
+        <input class="f-inp" id="cfg-eid" value="rng-event" oninput="validateEventId()" autocomplete="off" spellcheck="false">
+        <div id="cfg-eid-msg" style="font-size:var(--text-xs);margin-top:4px;color:var(--txm)">Used as the Firebase node key and the ?event= URL parameter on mobile views.</div>
+      </div>
       <div class="f-row"><label class="f-lbl">Event Name</label><input class="f-inp" id="cfg-nm" value="Twilight Biathlon 2026"></div>
       <div class="f-row"><label class="f-lbl">Friday Squad Start Time</label><input class="f-inp" id="cfg-fri" type="time" value="21:30"></div>
       <div class="f-row"><label class="f-lbl">Saturday Squad Start Time</label><input class="f-inp" id="cfg-sat" type="time" value="21:30"></div>
@@ -546,7 +551,7 @@ let moId = null;
 let moType = null;
 let roSortCol = 'bib';
 let roSortDir = 'asc';
-let cfg = { name:'Twilight Biathlon 2026', friStart:'21:30', satStart:'21:30', interval:300, penalty:300 };
+let cfg = { eventId:'rng-event', name:'Twilight Biathlon 2026', friStart:'21:30', satStart:'21:30', interval:300, penalty:300 };
 let undoData = null;
 let clearTimer = null;
 
@@ -582,6 +587,54 @@ function squadTag(squad) {
   return '';
 }
 function slotsPerSquad() { return Math.floor(3600 / cfg.interval); }
+
+// ── EVENT ID ─────────────────────────────────────────────
+// Explicit operator-named event ID. Validated as lowercase a-z, 0-9,
+// hyphens, 1-60 chars, no leading/trailing hyphen.
+function validEventId(s) {
+  if (typeof s !== 'string') return false;
+  if (!/^[a-z0-9-]{1,60}$/.test(s)) return false;
+  if (s.startsWith('-') || s.endsWith('-')) return false;
+  return true;
+}
+// Legacy derivation kept ONLY as a fallback so existing Firebase nodes
+// created before the explicit-ID change still resolve. Do not call
+// this for new events — set cfg.eventId on Event Config instead.
+function legacyEventId() {
+  return cfg.name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,40)
+         + '-' + new Date().getFullYear();
+}
+// Returns the event ID to use for Firebase. Prefers explicit cfg.eventId
+// when valid, falls back to legacy derivation otherwise.
+function resolveEventId() {
+  return validEventId(cfg.eventId) ? cfg.eventId : legacyEventId();
+}
+// Live validation on Event Config — paints the message line green/red
+// and disables the Connect button when invalid.
+function validateEventId() {
+  const inp = document.getElementById('cfg-eid');
+  const msg = document.getElementById('cfg-eid-msg');
+  const btn = document.querySelector('button[onclick="connectFirebase()"]');
+  if (!inp || !msg) return true;
+  const v = inp.value.trim();
+  const ok = validEventId(v);
+  if (!v) {
+    msg.textContent = 'Empty — will fall back to legacy ID: ' + legacyEventId();
+    msg.style.color = 'var(--wrn)';
+    if (btn) btn.disabled = false;
+    return false;
+  }
+  if (ok) {
+    msg.textContent = 'Valid. Firebase node: events/' + v;
+    msg.style.color = 'var(--suc)';
+    if (btn) btn.disabled = false;
+  } else {
+    msg.textContent = 'Invalid — use lowercase a–z, 0–9, hyphens (1–60), no leading/trailing hyphen.';
+    msg.style.color = 'var(--dan)';
+    if (btn) btn.disabled = true;
+  }
+  return ok;
+}
 
 // ── CHANGE TRACKING ───────────────────────────────────────
 function trackChange(c, field, oldVal, newVal) {
@@ -684,9 +737,11 @@ function attachFbListeners() {
     // — it caches in-memory automatically and survives brief disconnects.
     // Long offline periods are handled by our JSON session export (P0 #2).
 
-    // Generate a stable event ID from event name + year
-    fbEventId = cfg.name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-').slice(0,40)
-                + '-' + new Date().getFullYear();
+    // Use explicit operator-named event ID from cfg.eventId.
+    // Falls back to legacy derivation (name slug + year) only when
+    // cfg.eventId is empty/invalid, preserving access to data created
+    // before the explicit-ID change.
+    fbEventId = resolveEventId();
     fbRef = fbDb.ref('events/' + fbEventId);
 
     // Monitor connection state
@@ -793,6 +848,7 @@ function fbWriteCfg() {
 }
 
 function syncCfgToUI() {
+  const eid = document.getElementById('cfg-eid');  if (eid) eid.value = cfg.eventId || '';
   const nm  = document.getElementById('cfg-nm');   if (nm)  nm.value  = cfg.name;
   const fri = document.getElementById('cfg-fri');  if (fri) fri.value = cfg.friStart;
   const sat = document.getElementById('cfg-sat');  if (sat) sat.value = cfg.satStart;
@@ -1277,6 +1333,29 @@ function renderRo() {
 
 // ── CONFIG ───────────────────────────────────────────────
 function saveCfg(){
+  // Validate Event ID first — refuse to save an invalid one because
+  // it would write to (and read from) an unintended Firebase node.
+  const eidInp = document.getElementById('cfg-eid');
+  const newEid = eidInp ? eidInp.value.trim() : '';
+  if (newEid && !validEventId(newEid)) {
+    validateEventId();
+    toast('Invalid Event ID — not saved');
+    return;
+  }
+  // Warn-and-allow when Event ID changes while connected to Firebase.
+  // Switching the ID mid-session points the app at a different node;
+  // the prior node is left intact. Use Resume Session (Block 1 item 2)
+  // for a clean cross-event handoff.
+  if (fbConnected && newEid && newEid !== (cfg.eventId || '')) {
+    const ok = confirm(
+      'You are connected to Firebase event "' + (fbEventId || cfg.eventId || '(legacy)') + '".\n\n' +
+      'Changing the Event ID to "' + newEid + '" will not move the current data. ' +
+      'The app will continue using the old node until you disconnect and reconnect Firebase.\n\n' +
+      'Continue?'
+    );
+    if (!ok) return;
+  }
+  cfg.eventId=newEid;
   cfg.name=document.getElementById('cfg-nm').value;
   cfg.friStart=document.getElementById('cfg-fri').value;
   cfg.satStart=document.getElementById('cfg-sat').value;
