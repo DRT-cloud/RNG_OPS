@@ -509,6 +509,28 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
   </div>
 </div>
 
+<!-- CSV IMPORT ERROR MODAL — Block 1 item 3 -->
+<div class="mo" id="mo-csv-err" onclick="if(event.target===this)closeCsvErrMo()">
+  <div class="md" style="max-width:560px">
+    <div style="display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--wrn)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div class="md-t" style="margin-bottom:0">CSV Import — Some Rows Skipped</div>
+    </div>
+    <p style="font-size:var(--text-sm);color:var(--txm);line-height:1.6;margin-bottom:var(--sp4)">
+      Imported <strong style="color:var(--suc)" id="csv-err-ok">0</strong> rows.
+      Skipped <strong style="color:var(--wrn)" id="csv-err-count">0</strong> rows.
+      Row numbers match your spreadsheet (header is Row 1).
+    </p>
+    <div id="csv-err-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--bdr2);border-radius:var(--r-md);background:var(--sur3);margin-bottom:var(--sp4)"></div>
+    <p style="font-size:var(--text-xs);color:var(--txf);line-height:1.5;margin-bottom:var(--sp4)">
+      Fix the rows above in your source spreadsheet and re-import. This log is one-time — it will not be available after closing.
+    </p>
+    <div class="md-act">
+      <button class="btn btn-pri" onclick="closeCsvErrMo()">Got it</button>
+    </div>
+  </div>
+</div>
+
 <!-- RESUME SESSION CONFIRM MODAL — Block 1 item 2 -->
 <div class="mo" id="mo-sess" onclick="if(event.target===this)closeSessMo()">
   <div class="md" style="max-width:520px">
@@ -1416,19 +1438,147 @@ function saveCfg(){
 }
 function applyIvl(){cfg.interval=parseMMSS(document.getElementById('ivl-v').value);renderAll();}
 
+// ── CSV PARSER ─────────────────────────────────────
+// State-machine CSV parser. Handles:
+//   - Quoted fields: "smith, jr."
+//   - Escaped quotes within quoted fields: "she said ""hi"""
+//   - Embedded newlines inside quoted fields
+//   - CRLF and LF line endings
+// Returns { rows, errors }. rows is an array of string arrays.
+// errors is an array of { row, reason } — row is 1-indexed counting
+// the header row, so it matches Excel/Notepad line numbers.
+//
+// Failure modes:
+//   - Unterminated quote at EOF: hard fail (errors[0] flag, rows=[]).
+//   - Empty middle row: silently skipped (no error pushed).
+//   - Wrong column count vs header: caller's responsibility; this
+//     parser only does lexical splitting.
+function parseCSV(text) {
+  const rows = [];
+  const errors = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let line = 1;          // 1-indexed line number of the row START
+  let rowStartLine = 1;
+  // Strip BOM if present (Excel saves UTF-8 with BOM).
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const n = text.length;
+  for (let i = 0; i < n; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        // Escaped quote: "" -> literal "
+        if (i + 1 < n && text[i+1] === '"') { field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        if (ch === '\n') line++;
+        field += ch;
+      }
+    } else {
+      if (ch === '"') {
+        // Quote only opens a field at field start; mid-field quotes
+        // are treated as literal characters (Excel-compatible).
+        if (field === '') { inQuotes = true; }
+        else { field += ch; }
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+      } else if (ch === '\r') {
+        // Look ahead for \n; either way, end of row.
+        if (i + 1 < n && text[i+1] === '\n') i++;
+        row.push(field); field = '';
+        if (row.length > 1 || row[0] !== '') rows.push({ line: rowStartLine, cells: row });
+        row = []; line++; rowStartLine = line;
+      } else if (ch === '\n') {
+        row.push(field); field = '';
+        if (row.length > 1 || row[0] !== '') rows.push({ line: rowStartLine, cells: row });
+        row = []; line++; rowStartLine = line;
+      } else {
+        field += ch;
+      }
+    }
+  }
+  if (inQuotes) {
+    errors.push({ row: rowStartLine, reason: 'Unterminated quote starting on this row — import aborted.' });
+    return { rows: [], errors, aborted: true };
+  }
+  // Flush trailing field/row if file didn't end with a newline.
+  if (field !== '' || row.length > 0) {
+    row.push(field);
+    if (row.length > 1 || row[0] !== '') rows.push({ line: rowStartLine, cells: row });
+  }
+  return { rows, errors, aborted: false };
+}
+
 function impCSV(e){
   const file=e.target.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=ev=>{
-    const lines=ev.target.result.split('\n').filter(l=>l.trim());
-    const rows=lines.slice(1).map(l=>l.split(',').map(v=>v.trim().replace(/^"|"$/g,'')));
-    cx=rows.filter(r=>r.length>=4&&r[0]).map((r,i)=>mkC(r,i));
+    const parsed = parseCSV(ev.target.result);
+    const errors = parsed.errors.slice();
+    if (parsed.aborted) {
+      showCsvErrors(errors, 0);
+      e.target.value='';
+      return;
+    }
+    if (parsed.rows.length < 1) {
+      toast('CSV is empty');
+      e.target.value='';
+      return;
+    }
+    const headerCells = parsed.rows[0].cells;
+    const expectedCols = headerCells.length;
+    const dataRows = parsed.rows.slice(1);
+    const accepted = [];
+    dataRows.forEach(rec => {
+      const cells = rec.cells;
+      // Skip silently: blank cells across the whole row.
+      if (cells.every(c => !c || !c.trim())) return;
+      // Skip-and-warn: column count drift vs header.
+      if (cells.length !== expectedCols) {
+        errors.push({
+          row: rec.line,
+          reason: 'Column count mismatch — got ' + cells.length + ', expected ' + expectedCols + '.'
+        });
+        return;
+      }
+      // Skip-and-warn: required field (last name) missing.
+      const trimmed = cells.map(c => (c || '').trim());
+      if (!trimmed[0]) {
+        errors.push({ row: rec.line, reason: 'Missing Last Name in column 1.' });
+        return;
+      }
+      accepted.push(trimmed);
+    });
+    cx = accepted.map((r,i) => mkC(r,i));
     fbWriteCx(); rebuildFilters(); renderAll();
-    document.getElementById('imp-msg').textContent=cx.length+' competitors imported';
-    toast(cx.length+' competitors imported');
+    document.getElementById('imp-msg').textContent = cx.length + ' competitors imported';
+    if (errors.length) {
+      showCsvErrors(errors, cx.length);
+    } else {
+      toast(cx.length + ' competitors imported');
+    }
   };
   reader.readAsText(file);
   e.target.value='';
+}
+
+// One-shot per-row error modal. Dismissed = gone; no persistence.
+function showCsvErrors(errors, importedCount) {
+  document.getElementById('csv-err-count').textContent = errors.length;
+  document.getElementById('csv-err-ok').textContent = importedCount;
+  const list = document.getElementById('csv-err-list');
+  list.innerHTML = errors.map(er =>
+    '<div style="display:flex;gap:var(--sp3);padding:var(--sp2) var(--sp3);border-bottom:1px solid var(--bdr2);font-size:var(--text-sm)">' +
+      '<div style="color:var(--txf);font-family:var(--mono);min-width:64px">Row ' + er.row + '</div>' +
+      '<div style="color:var(--tx);flex:1">' + esc(er.reason) + '</div>' +
+    '</div>'
+  ).join('');
+  document.getElementById('mo-csv-err').classList.add('show');
+}
+function closeCsvErrMo() {
+  document.getElementById('mo-csv-err').classList.remove('show');
 }
 
 // ── SESSION EXPORT / IMPORT ──────────────────────────────
