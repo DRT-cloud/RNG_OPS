@@ -395,7 +395,7 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
         <th class="sortable" onclick="roSort('bib')" id="rh-bib">Bib <span class="sort-arrow"></span></th>
         <th class="sortable" onclick="roSort('last')" id="rh-last">Last <span class="sort-arrow"></span></th>
         <th class="sortable" onclick="roSort('first')" id="rh-first">First <span class="sort-arrow"></span></th>
-        <th>Division</th><th>Day</th><th>Squad</th><th>Shirt</th><th>Phone</th><th>Email</th><th>Fee Status</th><th>Approval</th>
+        <th>Division</th><th>Day</th><th>Squad</th><th>Shirt</th><th>Phone</th><th>Email</th><th>Fee Status</th>
       </tr></thead>
       <tbody id="ro-tb"></tbody>
     </table>
@@ -482,11 +482,14 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
         <div class="drop" onclick="document.getElementById('csv-f').click()">
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--txf)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p>Click to upload CSV</p>
-          <p style="font-size:10px;margin-top:4px;color:var(--txf)">Last, First, Division, Day, Squad, Shirt, Phone, Email, Address, Paid, Approval</p>
+          <p style="font-size:10px;margin-top:4px;color:var(--txf)">Required headers: first, last, division, day, squad &nbsp;·&nbsp; Optional: shirt, phone, email, address, paid, pmm link</p>
         </div>
         <input type="file" id="csv-f" accept=".csv" style="display:none" onchange="impCSV(event)">
         <div style="margin-top:var(--sp4);display:flex;gap:var(--sp3);align-items:center">
-          <button class="btn btn-gho btn-sm" onclick="loadSample()">Load Sample Data</button>
+          <button class="btn btn-gho btn-sm" onclick="downloadTemplate()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download Template
+          </button>
           <span id="imp-msg" style="font-size:var(--text-xs);color:var(--txm)"></span>
         </div>
       </div>
@@ -973,71 +976,114 @@ function undoClear() {
   hideUndoBar();
 }
 
-// ── SAMPLE DATA ──────────────────────────────────────────
-function loadSample() {
-  const rows = [
-    ['Hakanson','Seth','2-GUN','Friday','1','L','9186071993','seth.hakanson@yahoo.com','12014 E 114th Pl N Owasso OK','Paid','Approved',''],
-    ['Jones','Parker','NV 2-GUN','Friday','1','2XL','4055039969','prjones0114@gmail.com','18900 Wildhorse Dr Harrah OK 73045','Paid','Approved',''],
-    ['Pape','Chad','2-GUN','Friday','1','XL','4055703655','chadp488@gmail.com','5340 Starling Way OKC OK 73179','Paid','Approved',''],
-    ['Fink','Josh','2-GUN','Friday','1','L','4023690629','joshfink28@yahoo.com','315 S Baltimore Ave Hastings NE 68901','Paid','Approved',''],
-    ['Munson','Gary','2-GUN','Friday','1','XL','4054132667','garymunson405@gmail.com','944 Fillmore Piedmont OK 73078','Paid','Approved',''],
-    ['Henson','Cassie','2-GUN','Friday','1','S','9199208108','cassie.l.henson@gmail.com','2641 NW 15th St OKC OK 73107','Paid','Approved',''],
-    ['Jaradat','Omar','2-GUN','Friday','1','M','3202193649','dromar625@proton.me','10761 Smetana Rd Minnetonka MN 55343','Paid','Approved',''],
-    ['Marple','Jacob','2-GUN','Friday','1','XL','9124335995','jacob.marple1@gmail.com','4601 Castle Bay Cv Del City OK','Paid','Approved',''],
-    ['Fairless','Carter','2-GUN','Friday','1','M','9186062848','carter.fairless@gmail.com','13604 W 43rd Pl S Tulsa OK','Paid','Approved',''],
-    ['Ryan','Jeff','PCC','Friday','1','XL','4055961939','ryanjxxxx@yahoo.com','14612 Westlake Dr Piedmont OK 73078','Paid','Approved',''],
-    ['Henson','Chris','2-GUN','Friday','2','L','4056134228','cdub.henson@gmail.com','2641 NW 15th St OKC OK 73107','Paid','Approved',''],
-    ['Hammond','Brett','2-GUN','Friday','2','M','2063049966','brett.hammond@gmail.com','7824 Tomahawk Rd Prairie Village KS 66208','Paid','Approved',''],
-    ['Patrin','Jack','2-GUN','Friday','2','2XL','6517832032','jacky.patrin@gmail.com','1309 Van Buren Saint Paul MN 55104','Paid','Approved',''],
-    ['Wilkerson','Jim','PCC','Friday','2','L','4058020869','jim.wilkerson.01@gmail.com','14800 Westlake Dr Piedmont OK 73078','Paid','Approved',''],
-    ['Stowell','Mason','2-GUN','Friday','2','XL','9186305725','masonstowell1996@gmail.com','PO Box 11 Cleveland OK 74020','Paid','Approved',''],
-    ['Isidro','Andres','NV 2-GUN','Friday','2','L','6362224518','aaisidro90@gmail.com','601 Clarke St Winona MN 55987','Paid','Approved',''],
-    ['Wheaton','Brent','2-GUN','Friday','2','L','3083404573','wheatonbc@gmail.com','2217 Mohawk Dr Laramie WY 82072','Paid','Approved',''],
-    ['Seagraves','Joe','2-GUN','Friday','2','2XL','4059212102','jake.seagraves53@gmail.com','13131 Whitebud Pl Choctaw OK 73020','Paid','Approved',''],
-    ['Leach','Nick','2-GUN','Friday','2','L','5803367193','nleach@sbcglobal.net','PO Box 1006 Perry OK 73077','Paid','Approved',''],
-    ['Davis','Tim','2-GUN','Friday','2','S','9186256636','toy4rnr@gmail.com','2738 Woodward Blvd Tulsa OK 74114','Paid','Approved',''],
-    ['Jenkins','Austin','NV 2-GUN','Friday','3','L','5046386608','elloimjustaworm@gmail.com','5052 County Road 3506 Quinlan TX 75474','Paid','Approved',''],
-    ['Schultz','Nick','NV 2-GUN','Friday','3','S','2188396504','pistolfreak@hotmail.com','91850 Champagne Rd Kerrick MN 55756','Paid','Approved',''],
-    ['Hood','Charlie','NV 2-GUN','Friday','3','L','9186944626','av84fun@outlook.com','3412 S Tamarack Ave Broken Arrow OK 74012','Paid','Approved',''],
-    ['Weingart','Nick','NV 2-GUN','Friday','3','L','2693260671','weingartnicholas@gmail.com','188 Thompson Ave W West Saint Paul MN 55118','Paid','Approved',''],
-    ['Teague','Jeremy','2-GUN','Friday','3','L','9186986909','hkboomstick91@gmail.com','11929 N 97th East Ave Collinsville OK 74021','Paid','Approved',''],
-    ['Busby','Sian','2-GUN','Friday','3','L','4059900469','busby.sian@gmail.com','980139 S 3420 Rd Meeker OK 74855','Unpaid','',''],
-    ['Kiemen','Ray','NV PCC','Friday','3','M','7633709951','kiemenr@yahoo.com','9124 Statesman Rd Fort Belvoir VA 22060','Unpaid','',''],
-    ['Duckworth','Mustang','NV 2-GUN','Friday','3','L','9032729717','mustangduckk@gmail.com','153 FR 2121 Reno TX 75462','Paid','Approved',''],
-    ['Loftiss','Jacob','2-GUN','Friday','3','L','5805151446','jacob.loftiss1@gmail.com','8900 Park Hills Dr Arcadia OK 73007','Paid','Approved',''],
-    ['RO Lead','Event','2-GUN','Friday','10','M','4051234567','ro@rng.local','','Waived','Approved',''],
-    ['Safety','Officer','PCC','Friday','10','L','4059876543','safety@rng.local','','Waived','Approved',''],
-    ['Sponsor','Rep A','2-GUN','Friday','20','XL','4050001111','sponsor.a@vendor.com','','Waived','Approved',''],
-    ['Anderson','Blake','2-GUN','Saturday','1','L','4051112222','b.anderson@gmail.com','1001 N Lincoln Blvd OKC OK 73104','Paid','Approved',''],
-    ['Nguyen','Minh','NV 2-GUN','Saturday','1','M','5803334444','minh.nguyen@gmail.com','742 Evergreen Ter Springfield','Paid','Approved',''],
-    ['Cortez','Maria','PCC','Saturday','1','S','9185556666','mcortez@yahoo.com','403 W Main St Claremore OK 74017','Paid','Approved',''],
-    ['Brewer','Kyle','2-GUN','Saturday','1','XL','4057778888','kbrewer05@hotmail.com','2020 Ridgecrest Dr Moore OK 73160','Paid','Approved',''],
-    ['Park','Jae','NV PCC','Saturday','1','M','4059990000','jaepark@proton.me','5544 E 41st St Tulsa OK 74135','Paid','Approved',''],
-    ['Fletcher','Dana','2-GUN','Saturday','1','L','5802221133','dana.fletcher@gmail.com','800 Scissortail Dr OKC OK 73129','Paid','Pending',''],
-    ['Torres','Ramos','NV 2-GUN','Saturday','1','M','9183334455','rtorres@outlook.com','1313 Mockingbird Ln Dallas TX 75201','Unpaid','',''],
-    ['Caldwell','Travis','2-GUN','Saturday','1','2XL','4055566677','travis.caldwell@yahoo.com','PO Box 443 Enid OK 73701','Paid','Approved',''],
-    ['Morrison','Zach','2-GUN','Saturday','2','L','4058887766','zmorrison@gmail.com','17 Oak Ridge Dr Edmond OK 73013','Paid','Approved',''],
-    ['Walsh','Bridget','NV 2-GUN','Saturday','2','S','9186665544','bwalsh@yahoo.com','222 S Main St Pawhuska OK 74056','Paid','Approved',''],
-    ['Nakamura','Yuki','PCC','Saturday','2','M','4054443322','ynakamura@proton.me','PO Box 77 Woodward OK 73802','Paid','Approved',''],
-    ['Gibson','Darren','2-GUN','Saturday','2','XL','5801234567','dgibson@hotmail.com','711 Colorado Ave Woodward OK 73801','Paid','Approved',''],
-    ['Reyes','Sofia','NV 2-GUN','Saturday','2','S','4053214567','sreyes@gmail.com','1600 E Robinson St Norman OK 73071','Unpaid','',''],
-    ['RO Sat','Lead','2-GUN','Saturday','11','M','4056543210','ro.sat@rng.local','','Waived','Approved',''],
-  ];
-  cx = rows.map((r,i) => mkC(r,i));
-  fbWriteCx();
-  rebuildFilters(); renderAll();
-  document.getElementById('imp-msg').textContent = cx.length + ' competitors loaded';
-  toast(cx.length + ' competitors loaded');
+// ── CSV IMPORT — HEADER-DRIVEN ───────────────────────────
+// Required headers (must all be present after normalization):
+const REQUIRED_FIELDS = ['first','last','div','day','squad'];
+
+// Template emitted by "Download Template" button (event-agnostic).
+const CSV_TEMPLATE_HEADERS = ['first','last','division','day','squad','shirt','phone','email','address','paid','pmm link'];
+
+// Header aliases — keys are canonical field names used internally.
+// Values are normalized alias strings (lowercase, spaces/underscores/hyphens
+// stripped, trailing " name" removed). normalizeHeader() applies the same
+// transform to incoming CSV headers before lookup.
+const CSV_HEADER_ALIASES = {
+  first:   ['first', 'firstname'],
+  last:    ['last',  'lastname', 'surname'],
+  div:     ['division', 'div', 'class'],
+  day:     ['day', 'raceday'],
+  squad:   ['squad', 'squadnumber', 'squad#'],
+  shirt:   ['shirt', 'shirtsize', 'size'],
+  phone:   ['phone', 'phonenumber', 'mobile'],
+  email:   ['email', 'emailaddress'],
+  address: ['address', 'streetaddress'],
+  paid:    ['paid', 'feestatus', 'payment'],
+  pmm:     ['pmmlink', 'pmm']
+};
+
+// Normalize a raw CSV header cell into a canonical alias key:
+//   "First Name"  → "first"
+//   "Squad #"     → "squad#"
+//   "shirt_size"  → "shirtsize"
+function normalizeHeader(h) {
+  let s = String(h || '').toLowerCase().trim();
+  s = s.replace(/\s+name$/, '');   // strip trailing " name"
+  s = s.replace(/[\s_\-]+/g, ''); // strip spaces/underscores/hyphens
+  return s;
 }
 
-function mkC(r, i) {
-  return { id:i, last:r[0], first:r[1], div:r[2], day:r[3],
-    squad:parseInt(r[4])||1, slot:0, shirt:r[5]||'',
-    phone:r[6]||'', email:r[7]||'', address:r[8]||'',
-    paid:r[9]||'', approval:r[10]||'', pmm:r[11]||'',
-    bib:'', ciStatus:'Pending',
-    startMs:null, finishMs:null, obstacles:0, dnf:false,
-    _changes:[] };
+// Build a {canonical: columnIndex} map from a header row.
+// Returns { map, missing:[canonicalNames] } where missing is non-empty iff
+// any REQUIRED_FIELD has no matching column.
+function mapColumns(headerCells) {
+  const map = {};
+  const norm = headerCells.map(normalizeHeader);
+  Object.keys(CSV_HEADER_ALIASES).forEach(canonical => {
+    const aliases = CSV_HEADER_ALIASES[canonical];
+    for (let i = 0; i < norm.length; i++) {
+      if (aliases.indexOf(norm[i]) >= 0) {
+        if (!(canonical in map)) map[canonical] = i; // first match wins
+      }
+    }
+  });
+  const missing = REQUIRED_FIELDS.filter(f => !(f in map));
+  return { map, missing };
+}
+
+// Normalize the "paid" cell into the canonical dropdown values.
+// Accepts: paid/yes/y/true/1 → 'Paid', unpaid/no/n/false/0 → 'Unpaid',
+// waived/comp/complimentary → 'Waived'. Blank → 'Unpaid'.
+function normalizePaid(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (!s) return 'Unpaid';
+  if (['paid','yes','y','true','1'].indexOf(s) >= 0) return 'Paid';
+  if (['unpaid','no','n','false','0'].indexOf(s) >= 0) return 'Unpaid';
+  if (['waived','comp','complimentary','free'].indexOf(s) >= 0) return 'Waived';
+  return s.charAt(0).toUpperCase() + s.slice(1); // fall through preserving case
+}
+
+// Build a competitor record from a CSV row using a column map.
+// rec.cells is the trimmed cell array; columnMap is from mapColumns().
+function mkC(rec, i, columnMap) {
+  const cells = rec.cells;
+  const pick = (k) => (k in columnMap) ? (cells[columnMap[k]] || '').trim() : '';
+  return {
+    id: i,
+    last:    pick('last'),
+    first:   pick('first'),
+    div:     pick('div'),
+    day:     pick('day'),
+    squad:   parseInt(pick('squad')) || 1,
+    slot:    0,
+    shirt:   pick('shirt'),
+    phone:   pick('phone'),
+    email:   pick('email'),
+    address: pick('address'),
+    paid:    normalizePaid(pick('paid')),
+    pmm:     pick('pmm'),
+    bib:     '',
+    ciStatus:'Pending',
+    startMs: null,
+    finishMs:null,
+    obstacles:0,
+    dnf:     false,
+    _changes:[]
+  };
+}
+
+// Trigger a download of the canonical CSV template — headers only, no rows.
+function downloadTemplate() {
+  const csv = CSV_TEMPLATE_HEADERS.join(',') + '\r\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rng-ops-roster-template.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Template downloaded');
 }
 
 // ── BIB / SLOT ASSIGNMENT ────────────────────────────────
@@ -1121,6 +1167,7 @@ function renderCI() {
   list.sort((a,b)=>a.last.localeCompare(b.last));
   document.getElementById('ci-cnt').textContent = list.length+' competitors';
   const tb=document.getElementById('ci-tb');
+  if(cx.length===0){tb.innerHTML=emptyRosterRow(9);return;}
   if(!list.length){tb.innerHTML=eRow(9,'No competitors match');return;}
   tb.innerHTML = list.map(c=>{
     const sched = schedStart(c);
@@ -1179,6 +1226,7 @@ function renderRun() {
   const squads=[...new Set(list.map(c=>c.squad))].sort((a,b)=>a-b);
   const now=Date.now();
   const tb=document.getElementById('run-tb');
+  if(cx.length===0){tb.innerHTML=emptyRosterRow(12);return;}
   if(!list.length){tb.innerHTML=eRow(12,'No checked-in competitors');return;}
   let html='';
   squads.forEach(squad=>{
@@ -1329,6 +1377,7 @@ function renderRes() {
   if(dv){list=list.filter(c=>c.div===dv);dnfList=dnfList.filter(c=>c.div===dv);}
   list.forEach(c=>{c.rawSec=elapsedMs(c.startMs,c.finishMs)/1000;c.penSec=c.obstacles*cfg.penalty;c.runSec=c.rawSec+c.penSec;});
   const tb=document.getElementById('res-tb');
+  if(cx.length===0){tb.innerHTML=emptyRosterRow(10);return;}
   if(!list.length&&!dnfList.length){tb.innerHTML=eRow(10,'No finishers yet');return;}
   if(rv==='overall'){
     list.sort((a,b)=>a.runSec-b.runSec);
@@ -1388,7 +1437,8 @@ function renderRo() {
     return 0;
   });
   const tb=document.getElementById('ro-tb');
-  if(!list.length){tb.innerHTML=eRow(11,'No competitors');return;}
+  if(cx.length===0){tb.innerHTML=emptyRosterRow(10);return;}
+  if(!list.length){tb.innerHTML=eRow(10,'No competitors');return;}
   tb.innerHTML=list.map(c=>`<tr>
     <td><span class="td-b">${c.bib}</span>${squadTag(c.squad)}</td>
     <td class="td-n">${c.last}${chgBadgeHTML(c)}</td><td>${c.first}</td>
@@ -1397,7 +1447,6 @@ function renderRo() {
     <td style="color:var(--txm)">${c.phone||'—'}</td>
     <td style="color:var(--txm);font-size:11px">${c.email||'—'}</td>
     <td>${paidBdg(c.paid)}</td>
-    <td style="color:var(--txm)">${c.approval||'—'}</td>
   </tr>`).join('');
 }
 
@@ -1523,17 +1572,29 @@ function impCSV(e){
       return;
     }
     if (parsed.rows.length < 1) {
-      toast('CSV is empty');
+      toast('CSV is empty — no header row found');
       e.target.value='';
       return;
     }
+    // ── Header validation ──
     const headerCells = parsed.rows[0].cells;
+    const { map: columnMap, missing } = mapColumns(headerCells);
+    if (missing.length) {
+      errors.push({
+        row: parsed.rows[0].line,
+        reason: 'Missing required header(s): ' + missing.join(', ') +
+                '. Required: ' + REQUIRED_FIELDS.join(', ') + '.'
+      });
+      showCsvErrors(errors, 0);
+      e.target.value='';
+      return;
+    }
     const expectedCols = headerCells.length;
     const dataRows = parsed.rows.slice(1);
     const accepted = [];
     dataRows.forEach(rec => {
       const cells = rec.cells;
-      // Skip silently: blank cells across the whole row.
+      // Skip silently: fully blank row.
       if (cells.every(c => !c || !c.trim())) return;
       // Skip-and-warn: column count drift vs header.
       if (cells.length !== expectedCols) {
@@ -1543,15 +1604,20 @@ function impCSV(e){
         });
         return;
       }
-      // Skip-and-warn: required field (last name) missing.
+      // Skip-and-warn: required cell empty in this row.
       const trimmed = cells.map(c => (c || '').trim());
-      if (!trimmed[0]) {
-        errors.push({ row: rec.line, reason: 'Missing Last Name in column 1.' });
+      const recTrim = { cells: trimmed, line: rec.line };
+      const missingCell = REQUIRED_FIELDS.find(f => !trimmed[columnMap[f]]);
+      if (missingCell) {
+        errors.push({
+          row: rec.line,
+          reason: 'Missing required value for "' + missingCell + '".'
+        });
         return;
       }
-      accepted.push(trimmed);
+      accepted.push(recTrim);
     });
-    cx = accepted.map((r,i) => mkC(r,i));
+    cx = accepted.map((rec,i) => mkC(rec, i, columnMap));
     fbWriteCx(); rebuildFilters(); renderAll();
     document.getElementById('imp-msg').textContent = cx.length + ' competitors imported';
     if (errors.length) {
@@ -1734,6 +1800,19 @@ function dc(d){if(d==='2-GUN')return 'b2';if(d==='NV 2-GUN'||d==='NV PCC')return
 function paidBdg(p){return p==='Paid'?'<span class="badge bpa">Paid</span>':p==='Waived'?'<span class="badge bpd">Waived</span>':`<span class="badge bup">${p||'—'}</span>`;}
 function ciBdg(s){const m={'Checked In':'bin','Late':'blt','No Show':'bns','Pending':'bpd'};return `<span class="badge ${m[s]||'bpd'}">${s}</span>`;}
 function eRow(c,m){return `<tr><td colspan="${c}"><div class="es"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><p>${m}</p></div></td></tr>`;}
+// Empty-state row shown on every data screen when no competitors are loaded.
+// Duplicates the Import + Download Template controls so the operator can act
+// without navigating back to Config. `cols` matches the screen's table width.
+function emptyRosterRow(cols){
+  return `<tr><td colspan="${cols}"><div class="es" style="padding:var(--sp6) var(--sp4)">`
+    + `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>`
+    + `<p style="font-weight:600;margin-top:var(--sp2)">No competitors loaded</p>`
+    + `<p style="font-size:var(--text-xs);color:var(--txm);margin-top:var(--sp1)">Import a CSV roster or download the template to get started.</p>`
+    + `<div style="display:flex;gap:var(--sp2);justify-content:center;margin-top:var(--sp4)">`
+    +   `<button class="btn btn-pri btn-sm" onclick="document.getElementById('csv-f').click()">Import CSV</button>`
+    +   `<button class="btn btn-gho btn-sm" onclick="downloadTemplate()">Download Template</button>`
+    + `</div></div></td></tr>`;
+}
 function p2(n){return String(n).padStart(2,'0');}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function msTime(ms){const d=new Date(ms);return p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds());}
@@ -1789,7 +1868,8 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
 
 // ── INIT ─────────────────────────────────────────────────
 setSyncStatus('offline', 'Local');
-loadSample();
+// No seed data — roster starts empty and is populated via Import CSV.
+renderAll();
 
 // Auto-connect if hardcoded config is present.
 // Wrapped in try/catch + typeof guard per Turn 6 fix — never let a missing
