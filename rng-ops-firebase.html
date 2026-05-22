@@ -424,6 +424,19 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
           Clear All Data
         </button>
       </div>
+      <!-- Session Save / Resume — Block 1 item 2 -->
+      <div style="display:flex;gap:var(--sp3);align-items:center;flex-wrap:wrap;margin-top:var(--sp3);padding-top:var(--sp3);border-top:1px solid var(--bdr2)">
+        <button class="btn btn-gho btn-sm" id="btn-sess-save" onclick="saveSession()" style="position:relative">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Save Session
+          <span id="sess-off-dot" style="display:none;position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--dan);border:1.5px solid var(--sur2)" title="Firebase offline — export is your only safety net"></span>
+        </button>
+        <button class="btn btn-gho btn-sm" onclick="document.getElementById('sess-f').click()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Resume Session
+        </button>
+        <input type="file" id="sess-f" accept=".json,application/json" style="display:none" onchange="impSession(event)">
+      </div>
       <!-- Live Event ID display -->
       <div class="eid-box" id="eid-box" style="display:none">
         <div>
@@ -492,6 +505,34 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
     <div class="md-act">
       <button class="btn btn-gho" onclick="closeMo()">Cancel</button>
       <button class="btn btn-pri" onclick="saveMo()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESUME SESSION CONFIRM MODAL — Block 1 item 2 -->
+<div class="mo" id="mo-sess" onclick="if(event.target===this)closeSessMo()">
+  <div class="md" style="max-width:520px">
+    <div style="display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pri)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <div class="md-t" style="margin-bottom:0">Resume Session</div>
+    </div>
+    <p style="font-size:var(--text-sm);color:var(--txm);line-height:1.6;margin-bottom:var(--sp4)">Review the session file before resuming. This will replace all in-memory competitors and config, then write through to Firebase.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp4);margin-bottom:var(--sp4)">
+      <div style="background:var(--sur3);border:1px solid var(--bdr2);border-radius:var(--r-md);padding:var(--sp3)">
+        <div style="font-size:var(--text-xs);color:var(--txf);text-transform:uppercase;letter-spacing:.5px;margin-bottom:var(--sp1)">Current</div>
+        <div style="font-family:var(--mono);font-size:var(--text-sm);color:var(--tx);word-break:break-all" id="sess-cur-eid">—</div>
+        <div style="font-size:var(--text-xs);color:var(--txm);margin-top:var(--sp2)"><span id="sess-cur-count">0</span> competitors</div>
+      </div>
+      <div style="background:var(--sur3);border:1px solid var(--pri);border-radius:var(--r-md);padding:var(--sp3)">
+        <div style="font-size:var(--text-xs);color:var(--pri);text-transform:uppercase;letter-spacing:.5px;margin-bottom:var(--sp1)">Importing</div>
+        <div style="font-family:var(--mono);font-size:var(--text-sm);color:var(--tx);word-break:break-all" id="sess-new-eid">—</div>
+        <div style="font-size:var(--text-xs);color:var(--txm);margin-top:var(--sp2)"><span id="sess-new-count">0</span> competitors · <span id="sess-new-when">—</span></div>
+      </div>
+    </div>
+    <div id="sess-warn" style="display:none;background:rgba(245,158,11,.08);border:1px solid var(--wrn);border-radius:var(--r-md);padding:var(--sp3);margin-bottom:var(--sp4);font-size:var(--text-sm);color:var(--wrn);line-height:1.5"></div>
+    <div class="md-act">
+      <button class="btn btn-gho" onclick="closeSessMo()">Cancel</button>
+      <button class="btn btn-pri" onclick="confirmResumeSession()">Resume</button>
     </div>
   </div>
 </div>
@@ -747,46 +788,11 @@ function attachFbListeners() {
     // Monitor connection state
     fbDb.ref('.info/connected').on('value', snap => {
       fbConnected = snap.val() === true;
+      updateSessOfflineDot();
       setSyncStatus(fbConnected ? 'online' : 'offline', fbConnected ? 'Online' : 'Offline');
     });
 
-    // Subscribe to competitors
-    const cxListener = fbRef.child('competitors').on('value', snap => {
-      const data = snap.val();
-      if (data && !_suppressWrite) {
-        cx = Object.values(data).map(c => ({
-          ...c,
-          _changes: c._changes || [],
-          squad: parseInt(c.squad) || 1,
-          obstacles: parseInt(c.obstacles) || 0,
-          dnf: !!c.dnf,
-          startMs: c.startMs || null,
-          finishMs: c.finishMs || null,
-        }));
-        rebuildFilters(); renderAll();
-      }
-    }, err => {
-      console.error('Firebase competitors read error:', err);
-      setFbStatus('Read error: ' + err.message, true);
-      setSyncStatus('offline', 'Permission denied');
-    });
-
-    // Subscribe to config
-    const cfgListener = fbRef.child('config').on('value', snap => {
-      const data = snap.val();
-      if (data && !_suppressWrite) {
-        cfg = { ...cfg, ...data };
-        syncCfgToUI();
-        renderAll();
-      }
-    }, err => {
-      console.error('Firebase config read error:', err);
-    });
-
-    fbListeners = [
-      { ref: fbRef.child('competitors'), event: 'value', cb: cxListener },
-      { ref: fbRef.child('config'),      event: 'value', cb: cfgListener },
-    ];
+    bindEventListeners();
 
     fbConnected = true;
     setFbStatus('Connected to event: ' + fbEventId);
@@ -798,6 +804,48 @@ function attachFbListeners() {
     setFbStatus('Error: ' + err.message, true);
     setSyncStatus('offline', 'Error');
   }
+}
+
+// Attach the per-event 'value' listeners on the current fbRef.
+// Extracted so resumeSession can detach + re-attach when the event ID
+// changes mid-session. Caller is responsible for fbRef pointing at the
+// correct events/<eventId> node before calling.
+function bindEventListeners() {
+  const cxListener = fbRef.child('competitors').on('value', snap => {
+    const data = snap.val();
+    if (data && !_suppressWrite) {
+      cx = Object.values(data).map(c => ({
+        ...c,
+        _changes: c._changes || [],
+        squad: parseInt(c.squad) || 1,
+        obstacles: parseInt(c.obstacles) || 0,
+        dnf: !!c.dnf,
+        startMs: c.startMs || null,
+        finishMs: c.finishMs || null,
+      }));
+      rebuildFilters(); renderAll();
+    }
+  }, err => {
+    console.error('Firebase competitors read error:', err);
+    setFbStatus('Read error: ' + err.message, true);
+    setSyncStatus('offline', 'Permission denied');
+  });
+
+  const cfgListener = fbRef.child('config').on('value', snap => {
+    const data = snap.val();
+    if (data && !_suppressWrite) {
+      cfg = { ...cfg, ...data };
+      syncCfgToUI();
+      renderAll();
+    }
+  }, err => {
+    console.error('Firebase config read error:', err);
+  });
+
+  fbListeners = [
+    { ref: fbRef.child('competitors'), event: 'value', cb: cxListener },
+    { ref: fbRef.child('config'),      event: 'value', cb: cfgListener },
+  ];
 }
 
 function disconnectFirebase() {
@@ -1381,6 +1429,143 @@ function impCSV(e){
   };
   reader.readAsText(file);
   e.target.value='';
+}
+
+// ── SESSION EXPORT / IMPORT ──────────────────────────────
+const SESSION_VERSION = 3;
+
+// Format Date as YYYYMMDD-HHMMSS in local time for filenames.
+function sessStamp(d) {
+  return d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate())
+       + '-' + p2(d.getHours()) + p2(d.getMinutes()) + p2(d.getSeconds());
+}
+
+// Build the session envelope. Includes full cx array verbatim so that
+// _orig* snapshots and _changes audit history survive a round-trip.
+function buildSessionEnvelope() {
+  return {
+    version: SESSION_VERSION,
+    exportedAt: Date.now(),
+    eventId: resolveEventId(),
+    cfg: JSON.parse(JSON.stringify(cfg)),
+    cx: JSON.parse(JSON.stringify(cx))
+  };
+}
+
+function saveSession() {
+  const env = buildSessionEnvelope();
+  const json = JSON.stringify(env, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rng-session-' + env.eventId + '-' + sessStamp(new Date()) + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast('Session exported (' + cx.length + ' competitors)');
+}
+
+// Update the red-dot offline cue on the Save Session button.
+function updateSessOfflineDot() {
+  const dot = document.getElementById('sess-off-dot');
+  if (!dot) return;
+  dot.style.display = (fbApp && !fbConnected) ? 'block' : 'none';
+}
+
+// Validate the envelope shape before showing the resume modal.
+// Hard reject on any version mismatch — the operator gets a toast and
+// nothing happens to current state.
+function validateSessionEnvelope(env) {
+  if (!env || typeof env !== 'object') return 'Not a JSON object.';
+  if (env.version !== SESSION_VERSION) {
+    return 'Unsupported session version (' + env.version + '). Expected ' + SESSION_VERSION + '.';
+  }
+  if (typeof env.eventId !== 'string' || !env.eventId) return 'Missing eventId.';
+  if (!env.cfg || typeof env.cfg !== 'object') return 'Missing cfg.';
+  if (!Array.isArray(env.cx)) return 'Missing cx array.';
+  return null;
+}
+
+let pendingSession = null;
+
+function impSession(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    let env;
+    try { env = JSON.parse(ev.target.result); }
+    catch (err) { toast('Invalid JSON: ' + err.message); return; }
+    const reason = validateSessionEnvelope(env);
+    if (reason) { toast('Session rejected — ' + reason); return; }
+    pendingSession = env;
+    // Populate side-by-side modal
+    document.getElementById('sess-cur-eid').textContent = resolveEventId();
+    document.getElementById('sess-cur-count').textContent = cx.length;
+    document.getElementById('sess-new-eid').textContent = env.eventId;
+    document.getElementById('sess-new-count').textContent = env.cx.length;
+    const when = new Date(env.exportedAt);
+    document.getElementById('sess-new-when').textContent =
+      isNaN(when) ? 'unknown' : when.toLocaleString();
+    // Warning row
+    const warn = document.getElementById('sess-warn');
+    const msgs = [];
+    if (env.eventId !== resolveEventId()) {
+      msgs.push('Event ID differs. Resuming will switch this app to Firebase node events/' + env.eventId + '. The current event\u2019s node is left intact.');
+    }
+    if (cx.length > 0 && cx.length !== env.cx.length) {
+      msgs.push('Current event has ' + cx.length + ' competitors; import has ' + env.cx.length + '. Current data will be replaced.');
+    }
+    if (msgs.length) {
+      warn.innerHTML = msgs.map(m=>'• '+esc(m)).join('<br>');
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+      warn.innerHTML = '';
+    }
+    document.getElementById('mo-sess').classList.add('show');
+  };
+  r.readAsText(file);
+}
+
+function closeSessMo() {
+  document.getElementById('mo-sess').classList.remove('show');
+  pendingSession = null;
+}
+
+function confirmResumeSession() {
+  if (!pendingSession) { closeSessMo(); return; }
+  const env = pendingSession;
+  // Switch events on mismatch — overwrite cfg.eventId so the app writes
+  // through to the imported node. Caller chose Option (a): file is the
+  // authoritative primary key.
+  cfg = Object.assign({}, env.cfg);
+  cfg.eventId = env.eventId;
+  // Restore cx verbatim — preserves _orig* snapshots and _changes audit
+  // history so the change-badge UI still reflects roster edits.
+  cx = env.cx.map(c => Object.assign({}, c));
+  // Repoint Firebase to the imported event ID. The old listeners are
+  // detached before fbRef is reassigned so we don’t keep streaming from
+  // the prior node. _suppressWrite guards against the new listeners
+  // immediately re-reading our own writes.
+  if (fbApp && fbDb) {
+    fbListeners.forEach(l => l.ref.off(l.event, l.cb));
+    fbListeners = [];
+    fbEventId = cfg.eventId;
+    fbRef = fbDb.ref('events/' + fbEventId);
+    bindEventListeners();
+    fbWriteCfg();
+    fbWriteCx();
+    const box = document.getElementById('eid-box');
+    if (box) { box.style.display = 'flex'; document.getElementById('eid-val').textContent = fbEventId; }
+    setFbStatus('Connected to event: ' + fbEventId);
+  }
+  syncCfgToUI();
+  rebuildFilters();
+  renderAll();
+  closeSessMo();
+  toast('Session resumed — ' + cx.length + ' competitors, event ' + cfg.eventId);
 }
 
 function expCSV(){
