@@ -209,6 +209,28 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
 .md-act{display:flex;gap:var(--sp3);justify-content:flex-end;margin-top:var(--sp5)}
 
 .es{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:var(--sp12) var(--sp8);color:var(--txm);text-align:center;gap:var(--sp3)}
+/* Block 2 — Read-only mode + Event Library */
+.ro-banner{display:none;background:var(--wrnd);border-bottom:1px solid var(--wrn);color:var(--wrn);font-size:var(--text-sm);font-weight:600;padding:var(--sp3) var(--sp6);text-align:center;letter-spacing:.02em}
+body.readonly .ro-banner{display:block}
+body.readonly .ro-hide{display:none !important}
+body.readonly .ro-dim{opacity:.45;pointer-events:none}
+body.readonly input[data-ro-disable],body.readonly select[data-ro-disable],body.readonly button[data-ro-disable]{opacity:.45;pointer-events:none;cursor:not-allowed}
+.nav-i .lock-bdg{display:none;width:8px;height:8px;border-radius:50%;background:var(--wrn);margin-left:auto}
+body.readonly .nav-i .lock-bdg{display:inline-block}
+.evlib-tbl{width:100%;border-collapse:collapse;font-size:var(--text-sm)}
+.evlib-tbl th{text-align:left;padding:var(--sp2) var(--sp3);background:var(--sur3);color:var(--txm);font-weight:600;font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--bdr2)}
+.evlib-tbl td{padding:var(--sp3);border-bottom:1px solid var(--bdr2);color:var(--tx)}
+.evlib-tbl tr.evlib-cur{background:var(--sur3)}
+.evlib-tbl tr.evlib-row:hover{background:var(--sur2);cursor:pointer}
+.evlib-pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.evlib-pill.edit{background:var(--sucd,rgba(80,180,120,0.15));color:var(--suc,#50b478)}
+.evlib-pill.readonly{background:var(--wrnd);color:var(--wrn)}
+.evlib-panel{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:var(--sp5);margin-top:var(--sp4)}
+.evlib-panel h4{font-size:var(--text-sm);font-weight:700;margin-bottom:var(--sp3);color:var(--txm);text-transform:uppercase;letter-spacing:.05em}
+.evlib-cur{display:flex;align-items:center;gap:var(--sp3);padding:var(--sp3);background:var(--sur2);border-radius:var(--r-md);margin-bottom:var(--sp3)}
+.evlib-cur-id{font-family:monospace;font-weight:700;color:var(--tx);font-size:var(--text-sm)}
+.evlib-cur-name{color:var(--txm);font-size:var(--text-xs)}
+.danger-zone{margin-top:var(--sp4);padding-top:var(--sp4);border-top:1px solid var(--dand)}
 .es svg{color:var(--txf)}
 .es p{font-size:var(--text-sm);max-width:36ch}
 .page{display:none}.page.active{display:block}
@@ -281,6 +303,7 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
 </header>
 
 <main class="main">
+<div class="ro-banner" id="ro-banner">READ-ONLY MODE · Timing is locked. Toggle on Event Config to enable editing.</div>
 
 <!-- CHECK-IN -->
 <div class="page active" id="page-checkin">
@@ -419,23 +442,45 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
       <div class="f-row"><label class="f-lbl">Obstacle Penalty per Skip (MM:SS)</label><input class="f-inp" id="cfg-pen" value="5:00"></div>
       <div style="display:flex;gap:var(--sp3);align-items:center;flex-wrap:wrap;margin-top:var(--sp2)">
         <button class="btn btn-pri" onclick="saveCfg()">Save Settings</button>
-        <button class="btn btn-red btn-sm" onclick="openClearMo()" style="margin-left:auto">
+        <button class="btn btn-red btn-sm ro-hide" onclick="openClearMo()" style="margin-left:auto">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
           Clear All Data
         </button>
       </div>
-      <!-- Session Save / Resume — Block 1 item 2 -->
-      <div style="display:flex;gap:var(--sp3);align-items:center;flex-wrap:wrap;margin-top:var(--sp3);padding-top:var(--sp3);border-top:1px solid var(--bdr2)">
-        <button class="btn btn-gho btn-sm" id="btn-sess-save" onclick="saveSession()" style="position:relative">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-          Save Session
-          <span id="sess-off-dot" style="display:none;position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--dan);border:1.5px solid var(--sur2)" title="Firebase offline — export is your only safety net"></span>
-        </button>
-        <button class="btn btn-gho btn-sm" onclick="document.getElementById('sess-f').click()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Resume Session
-        </button>
-        <input type="file" id="sess-f" accept=".json,application/json" style="display:none" onchange="impSession(event)">
+      <!-- Event Library — Block 2 -->
+      <div class="evlib-panel">
+        <h4>Event Library</h4>
+        <div class="evlib-cur">
+          <div style="flex:1">
+            <div class="evlib-cur-id" id="evlib-cur-id">—</div>
+            <div class="evlib-cur-name" id="evlib-cur-name">—</div>
+          </div>
+          <select class="f-inp" id="cfg-mode" style="max-width:140px" onchange="onModeChange()">
+            <option value="edit">Edit Mode</option>
+            <option value="readonly">Read-only</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:var(--sp3);flex-wrap:wrap">
+          <button class="btn btn-pri btn-sm" onclick="openSwitchEventMo()">Switch Event</button>
+          <button class="btn btn-gho btn-sm" onclick="openNewEventMo()">New Event</button>
+        </div>
+        <!-- Local backups (moved from prior session row) -->
+        <div style="display:flex;gap:var(--sp3);flex-wrap:wrap;margin-top:var(--sp3);padding-top:var(--sp3);border-top:1px solid var(--bdr2)">
+          <button class="btn btn-gho btn-sm" id="btn-sess-save" onclick="saveSession()" style="position:relative">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Session to File
+            <span id="sess-off-dot" style="display:none;position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--dan);border:1.5px solid var(--sur2)" title="Firebase offline — export is your only safety net"></span>
+          </button>
+          <button class="btn btn-gho btn-sm" onclick="document.getElementById('sess-f').click()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Load Session from File
+          </button>
+          <input type="file" id="sess-f" accept=".json,application/json" style="display:none" onchange="impSession(event)">
+        </div>
+        <div class="danger-zone">
+          <button class="btn btn-red btn-sm" onclick="openDeleteEventMo()">Delete This Event…</button>
+          <span style="font-size:var(--text-xs);color:var(--txm);margin-left:var(--sp3)">Permanently removes event from Firebase. Export a backup first.</span>
+        </div>
       </div>
       <!-- Live Event ID display -->
       <div class="eid-box" id="eid-box" style="display:none">
@@ -477,7 +522,7 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
       </div>
       <div id="fb-status" style="margin-top:var(--sp3);font-size:var(--text-xs);color:var(--txm)">Not connected — app running in local mode.</div>
 
-      <div style="margin-top:var(--sp6);border-top:1px solid var(--bdr);padding-top:var(--sp5)">
+      <div class="ro-hide" style="margin-top:var(--sp6);border-top:1px solid var(--bdr);padding-top:var(--sp5)">
         <h3 style="font-size:var(--text-sm);font-weight:700;margin-bottom:var(--sp4)">Import Competitors</h3>
         <div class="drop" onclick="document.getElementById('csv-f').click()">
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--txf)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -498,6 +543,80 @@ tbody td{padding:var(--sp3) var(--sp4);vertical-align:middle;color:var(--tx);whi
 </div>
 
 </main>
+</div>
+
+<!-- SWITCH EVENT MODAL — Block 2 -->
+<div class="mo" id="mo-switch-ev" onclick="if(event.target===this)closeSwitchEventMo()">
+  <div class="md" style="max-width:720px">
+    <div class="md-t" style="margin-bottom:var(--sp3)">Switch Event</div>
+    <p style="font-size:var(--text-sm);color:var(--txm);margin-bottom:var(--sp4)">Select an event from your Firebase library. The app will rebind to the selected event ID.</p>
+    <div id="evlib-list" style="max-height:380px;overflow-y:auto;border:1px solid var(--bdr2);border-radius:var(--r-md);background:var(--sur3)"></div>
+    <div id="evlib-empty" style="display:none;padding:var(--sp6);text-align:center;color:var(--txm);font-size:var(--text-sm)">No other events in your Firebase library yet.</div>
+    <div class="md-act">
+      <button class="btn btn-gho" onclick="closeSwitchEventMo()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW EVENT MODAL — Block 2 -->
+<div class="mo" id="mo-new-ev" onclick="if(event.target===this)closeNewEventMo()">
+  <div class="md" style="max-width:520px">
+    <div class="md-t">New Event</div>
+    <p style="font-size:var(--text-sm);color:var(--txm);margin-bottom:var(--sp4)">Creates a new empty event in Firebase. The current event's data is left intact.</p>
+    <div class="f-row"><label class="f-lbl">Event ID <span style="color:var(--txf);font-weight:400">(lowercase a–z, 0–9, hyphens; max 60)</span></label><input class="f-inp" id="newev-id" oninput="validateNewEventId()" autocomplete="off" spellcheck="false"></div>
+    <div id="newev-id-msg" style="font-size:var(--text-xs);margin-top:-12px;margin-bottom:var(--sp3);color:var(--txm)"></div>
+    <div class="f-row"><label class="f-lbl">Event Name</label><input class="f-inp" id="newev-name" placeholder="Twilight Biathlon May 2027"></div>
+    <div class="f-row"><label class="f-lbl">Event Date <span style="color:var(--txf);font-weight:400">(MM/DD/YYYY)</span></label><input class="f-inp" id="newev-date" placeholder="05/09/2027"></div>
+    <div class="md-act">
+      <button class="btn btn-gho" onclick="closeNewEventMo()">Cancel</button>
+      <button class="btn btn-pri" id="newev-create" onclick="confirmNewEvent()" disabled>Create Event</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE EVENT MODAL — Block 2 (two-step, paranoid) -->
+<div class="mo" id="mo-del-ev" onclick="if(event.target===this)closeDeleteEventMo()">
+  <div class="md" style="max-width:560px">
+    <!-- Step 1: type both ID and Name -->
+    <div id="del-ev-step1">
+      <div style="display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4)">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--dan)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div class="md-t" style="margin-bottom:0">Delete Event — Step 1 of 2</div>
+      </div>
+      <div style="background:var(--sur3);border:1px solid var(--bdr2);border-radius:var(--r-md);padding:var(--sp4);margin-bottom:var(--sp4)">
+        <div style="font-family:monospace;font-weight:700;font-size:var(--text-sm);margin-bottom:var(--sp1)" id="del-ev-id-display">—</div>
+        <div style="font-size:var(--text-sm);margin-bottom:var(--sp2)" id="del-ev-name-display">—</div>
+        <div style="font-size:var(--text-xs);color:var(--txm)" id="del-ev-meta">—</div>
+      </div>
+      <p style="font-size:var(--text-sm);color:var(--txm);margin-bottom:var(--sp4)">To enable Delete, type both the Event ID and the Event Name <strong>exactly</strong>.</p>
+      <div class="f-row">
+        <label class="f-lbl">Type the Event ID</label>
+        <input class="f-inp" id="del-ev-id-inp" oninput="validateDeleteEvent()" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="f-row">
+        <label class="f-lbl">Type the Event Name</label>
+        <input class="f-inp" id="del-ev-name-inp" oninput="validateDeleteEvent()" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="md-act">
+        <button class="btn btn-gho" onclick="closeDeleteEventMo()">Cancel</button>
+        <button class="btn btn-red" id="del-ev-step1-btn" onclick="advanceDeleteEvent()" disabled>Continue</button>
+      </div>
+    </div>
+    <!-- Step 2: backup gate -->
+    <div id="del-ev-step2" style="display:none">
+      <div style="display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4)">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--dan)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div class="md-t" style="margin-bottom:0">Delete Event — Step 2 of 2</div>
+      </div>
+      <p style="font-size:var(--text-sm);color:var(--tx);margin-bottom:var(--sp3)">This permanently deletes <strong id="del-ev-final-id">—</strong> from Firebase, including all competitors, configuration, and history.</p>
+      <p style="font-size:var(--text-sm);color:var(--wrn);margin-bottom:var(--sp4)"><strong>Have you exported a JSON backup?</strong> You will have 15 seconds to undo after delete.</p>
+      <div class="md-act">
+        <button class="btn btn-gho" onclick="closeDeleteEventMo()">Cancel</button>
+        <button class="btn btn-gho" onclick="exportBeforeDelete()">Export JSON First</button>
+        <button class="btn btn-red" onclick="confirmDeleteEvent()">Delete Permanently</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- EDIT MODAL -->
@@ -617,7 +736,7 @@ let moId = null;
 let moType = null;
 let roSortCol = 'bib';
 let roSortDir = 'asc';
-let cfg = { eventId:'rng-event', name:'Twilight Biathlon 2026', friStart:'21:30', satStart:'21:30', interval:300, penalty:300 };
+let cfg = { eventId:'rng-event', name:'Twilight Biathlon 2026', eventDate:'', day1:'', day2:'', friStart:'21:30', satStart:'21:30', interval:300, penalty:300, mode:'edit' };
 let undoData = null;
 let clearTimer = null;
 
@@ -860,6 +979,9 @@ function bindEventListeners() {
     const data = snap.val();
     if (data && !_suppressWrite) {
       cfg = { ...cfg, ...data };
+      if (!cfg.mode) cfg.mode = 'edit';
+      applyMode();
+      refreshEventLibraryCard();
       syncCfgToUI();
       renderAll();
     }
@@ -901,7 +1023,7 @@ function fbWriteCx() {
     data[c.id] = clean;
   });
   fbRef.child('competitors').set(data)
-    .then(() => { _suppressWrite = false; setSyncStatus('online', 'Online'); })
+    .then(() => { _suppressWrite = false; setSyncStatus('online', 'Online'); fbWriteEventIndex(); })
     .catch(err => { _suppressWrite = false; console.error(err); setSyncStatus('offline', 'Sync error'); });
   setSyncStatus('syncing', 'Saving…');
 }
@@ -917,7 +1039,7 @@ function fbWriteOne(c) {
 // Write config to Firebase
 function fbWriteCfg() {
   if (!fbRef || !fbConnected) return;
-  fbRef.child('config').set(cfg).catch(err => console.error('fbWriteCfg:', err));
+  fbRef.child('config').set(cfg).then(() => fbWriteEventIndex()).catch(err => console.error('fbWriteCfg:', err));
 }
 
 function syncCfgToUI() {
@@ -929,6 +1051,16 @@ function syncCfgToUI() {
   const pen = document.getElementById('cfg-pen');  if (pen) pen.value = fmtMMSS(cfg.penalty);
   const ivv = document.getElementById('ivl-v');    if (ivv) ivv.value = fmtMMSS(cfg.interval);
   const sbe = document.getElementById('sb-evt');   if (sbe) sbe.textContent = cfg.name;
+  // Block 2: ensure mode default + reflect across UI.
+  if (!cfg.mode) cfg.mode = 'edit';
+  applyMode();
+  refreshEventLibraryCard();
+  // Silent migration: if the currently-loaded event has no /eventIndex/ entry yet, create one.
+  if (fbDb && fbConnected && cfg.eventId) {
+    fbDb.ref('eventIndex/' + cfg.eventId).once('value').then(snap => {
+      if (!snap.exists()) fbWriteEventIndex();
+    }).catch(()=>{});
+  }
 }
 
 // ── CLEAR / UNDO ─────────────────────────────────────────
@@ -939,6 +1071,7 @@ function openClearMo() {
 function closeClearMo() { document.getElementById('mo-clear').classList.remove('open'); }
 
 function confirmClear() {
+  if(isReadOnly()){toast('Read-only mode — cannot clear data');return;}
   undoData = JSON.parse(JSON.stringify(cx));
   cx = [];
   if (fbRef && fbConnected) {
@@ -1151,7 +1284,7 @@ function setRV(v, btn) {
 }
 function byDay(list) { return activeDay==='All' ? list : list.filter(c=>c.day===activeDay); }
 
-function renderAll() { assignBibs(); renderCI(); renderRun(); renderRes(); renderRo(); }
+function renderAll() { assignBibs(); renderCI(); renderRun(); renderRes(); renderRo(); ;refreshEventLibraryCard();}
 
 // ── CHECK-IN ─────────────────────────────────────────────
 function renderCI() {
@@ -1209,7 +1342,7 @@ function ciEditSquad(id, val) {
   c.squad=parseInt(val)||1;
   fbWriteOne(c); renderAll(); toast(c.last+' moved to Squad '+p2(c.squad));
 }
-function setCi(id,s){
+function setCi(id,s){if(isReadOnly()){toast('Read-only mode — check-in is locked');return;}
   const c=cx.find(x=>x.id===id); if(!c) return;
   c.ciStatus=s; fbWriteOne(c); renderCI(); updateStats(); toast(c.last+' → '+s);
 }
@@ -1282,16 +1415,17 @@ function renderRun() {
   tb.innerHTML=html;
 }
 
-function doStart(id){const c=cx.find(x=>x.id===id);if(c&&!c.startMs){c.startMs=Date.now();fbWriteOne(c);renderRun();toast(c.last+' started');}}
+function doStart(id){if(isReadOnly()){toast('Read-only mode — timing is locked');return;}const c=cx.find(x=>x.id===id);if(c&&!c.startMs){c.startMs=Date.now();fbWriteOne(c);renderRun();toast(c.last+' started');}}
 function doFinish(id){
+  if(isReadOnly()){toast('Read-only mode — timing is locked');return;}
   const c=cx.find(x=>x.id===id);
   if(c&&c.startMs&&!c.finishMs){
     c.finishMs=Date.now(); fbWriteOne(c); renderRun(); renderRes();
     toast(c.last+' finished — '+fmtMs(elapsedMs(c.startMs,c.finishMs)));
   }
 }
-function doDNF(id){const c=cx.find(x=>x.id===id);if(c){c.dnf=true;fbWriteOne(c);renderRun();toast(c.last+' → DNF');}}
-function adjObs(id,d){const c=cx.find(x=>x.id===id);if(c){c.obstacles=Math.max(0,c.obstacles+d);fbWriteOne(c);renderRun();renderRes();}}
+function doDNF(id){if(isReadOnly()){toast('Read-only mode — timing is locked');return;}const c=cx.find(x=>x.id===id);if(c){c.dnf=true;fbWriteOne(c);renderRun();toast(c.last+' → DNF');}}
+function adjObs(id,d){if(isReadOnly()){toast('Read-only mode — timing is locked');return;}const c=cx.find(x=>x.id===id);if(c){c.obstacles=Math.max(0,c.obstacles+d);fbWriteOne(c);renderRun();renderRes();}}
 
 function updateStats(list) {
   const l=list||byDay(cx).filter(c=>c.ciStatus!=='Pending'&&c.ciStatus!=='No Show');
@@ -1450,6 +1584,349 @@ function renderRo() {
   </tr>`).join('');
 }
 
+// ── EVENT INDEX / LIBRARY — Block 2 ─────────────────────────────
+// Top-level /eventIndex/ node holds lightweight metadata for every event
+// the operator has touched. Read by the Switch Event modal; written by
+// fbWriteEventIndex() on every cfg/cx save. This avoids a full /events/
+// scan when listing the library.
+//
+// Schema: /eventIndex/<eventId>: { name, date, day1, day2, cxCount, mode, createdAt, updatedAt }
+function fbWriteEventIndex() {
+  if (!fbDb || !fbConnected) return;
+  const eid = (cfg.eventId || fbEventId || '').trim();
+  if (!eid) return;
+  const ref = fbDb.ref('eventIndex/' + eid);
+  // Read existing entry to preserve createdAt.
+  ref.once('value').then(snap => {
+    const prev = snap.val() || {};
+    const entry = {
+      name:      cfg.name || '',
+      date:      cfg.eventDate || cfg.day1 || '',
+      day1:      cfg.day1 || '',
+      day2:      cfg.day2 || '',
+      cxCount:   Array.isArray(cx) ? cx.length : 0,
+      mode:      cfg.mode || 'edit',
+      createdAt: prev.createdAt || Date.now(),
+      updatedAt: Date.now()
+    };
+    ref.set(entry).catch(err => console.error('fbWriteEventIndex:', err));
+  }).catch(err => console.error('fbWriteEventIndex read:', err));
+}
+
+// Read the full /eventIndex/ for the Switch Event modal.
+function fbReadEventIndex(cb) {
+  if (!fbDb || !fbConnected) { cb({}); return; }
+  fbDb.ref('eventIndex').once('value')
+    .then(snap => cb(snap.val() || {}))
+    .catch(err => { console.error('fbReadEventIndex:', err); cb({}); });
+}
+
+// ── READ-ONLY MODE ───────────────────────────────────────────────
+// Single source of truth: cfg.mode ('edit' | 'readonly'). Toggling
+// updates Firebase, the dropdown, and a body CSS class. CSS rules
+// hide/disable controls via the .readonly selector; render functions
+// don't need per-action gating.
+function applyMode() {
+  const mode = cfg.mode === 'readonly' ? 'readonly' : 'edit';
+  document.body.classList.toggle('readonly', mode === 'readonly');
+  const sel = document.getElementById('cfg-mode');
+  if (sel) sel.value = mode;
+}
+
+function onModeChange() {
+  const sel = document.getElementById('cfg-mode');
+  if (!sel) return;
+  const newMode = sel.value === 'readonly' ? 'readonly' : 'edit';
+  // Switching INTO edit requires confirmation; switching to readonly is one-click.
+  if (newMode === 'edit' && cfg.mode === 'readonly') {
+    const ok = confirm('Enable edits on this event? Timing and roster changes will be allowed again.');
+    if (!ok) { sel.value = 'readonly'; return; }
+  }
+  cfg.mode = newMode;
+  fbWriteCfg();
+  fbWriteEventIndex();
+  applyMode();
+  toast(newMode === 'readonly' ? 'Read-only mode enabled' : 'Edit mode enabled');
+}
+
+function isReadOnly() { return cfg.mode === 'readonly'; }
+
+// Refresh the "currently loaded" card in the Event Library panel.
+function refreshEventLibraryCard() {
+  const idEl = document.getElementById('evlib-cur-id');
+  const nmEl = document.getElementById('evlib-cur-name');
+  if (idEl) idEl.textContent = cfg.eventId || '(not set)';
+  if (nmEl) nmEl.textContent = (cfg.name || '—') + ' · ' + (cx.length || 0) + ' competitors';
+}
+
+// ── SWITCH EVENT MODAL ───────────────────────────────────────────
+function openSwitchEventMo() {
+  if (!fbConnected) { toast('Connect Firebase to browse events'); return; }
+  fbReadEventIndex(index => {
+    const list = document.getElementById('evlib-list');
+    const empty = document.getElementById('evlib-empty');
+    const currentId = (cfg.eventId || '').trim();
+    const ids = Object.keys(index).sort((a, b) => (index[b].updatedAt || 0) - (index[a].updatedAt || 0));
+    if (ids.length === 0) {
+      list.style.display = 'none';
+      empty.style.display = 'block';
+    } else {
+      list.style.display = 'block';
+      empty.style.display = 'none';
+      const rows = ids.map(id => {
+        const e = index[id];
+        const isCur = id === currentId;
+        const updated = e.updatedAt ? relTime(e.updatedAt) : '—';
+        const pill = '<span class="evlib-pill ' + (e.mode === 'readonly' ? 'readonly' : 'edit') + '">' + (e.mode || 'edit') + '</span>';
+        const action = isCur
+          ? '<span style="color:var(--txm);font-size:var(--text-xs)">current</span>'
+          : '<button class="btn btn-pri btn-sm" onclick="confirmSwitchEvent(\'' + esc(id) + '\')">Switch</button>';
+        return '<tr class="' + (isCur ? 'evlib-cur' : 'evlib-row') + '">'
+          + '<td style="font-family:monospace;font-weight:600">' + esc(id) + '</td>'
+          + '<td>' + esc(e.name || '—') + '</td>'
+          + '<td>' + esc(e.date || '—') + '</td>'
+          + '<td style="text-align:center">' + (e.cxCount || 0) + '</td>'
+          + '<td>' + pill + '</td>'
+          + '<td style="color:var(--txm);font-size:var(--text-xs)">' + updated + '</td>'
+          + '<td style="text-align:right">' + action + '</td>'
+          + '</tr>';
+      }).join('');
+      list.innerHTML = '<table class="evlib-tbl"><thead><tr>'
+        + '<th>Event ID</th><th>Name</th><th>Date</th><th>Cx</th><th>Mode</th><th>Updated</th><th></th>'
+        + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+    document.getElementById('mo-switch-ev').classList.add('show');
+  });
+}
+function closeSwitchEventMo() {
+  document.getElementById('mo-switch-ev').classList.remove('show');
+}
+
+function confirmSwitchEvent(newId) {
+  if (!newId || !validEventId(newId)) { toast('Invalid event ID'); return; }
+  if (newId === (cfg.eventId || '').trim()) { closeSwitchEventMo(); return; }
+  const ok = confirm('Switch to event "' + newId + '"?\n\nThe current event is left intact in Firebase.');
+  if (!ok) return;
+  // Unbind current listeners, rebind to new event.
+  if (fbApp && fbDb) {
+    fbListeners.forEach(l => l.ref.off(l.event, l.cb));
+    fbListeners = [];
+    cfg.eventId = newId;
+    fbEventId = newId;
+    fbRef = fbDb.ref('events/' + newId);
+    bindEventListeners();
+    const box = document.getElementById('eid-box');
+    if (box) { box.style.display = 'flex'; document.getElementById('eid-val').textContent = newId; }
+    setFbStatus('Connected to event: ' + newId);
+  }
+  closeSwitchEventMo();
+  toast('Switched to ' + newId);
+}
+
+// ── NEW EVENT MODAL ──────────────────────────────────────────────
+function openNewEventMo() {
+  if (!fbConnected) { toast('Connect Firebase first'); return; }
+  document.getElementById('newev-id').value = '';
+  document.getElementById('newev-name').value = '';
+  document.getElementById('newev-date').value = '';
+  document.getElementById('newev-id-msg').textContent = '';
+  document.getElementById('newev-create').disabled = true;
+  document.getElementById('mo-new-ev').classList.add('show');
+}
+function closeNewEventMo() {
+  document.getElementById('mo-new-ev').classList.remove('show');
+}
+function validateNewEventId() {
+  const v = (document.getElementById('newev-id').value || '').trim();
+  const msg = document.getElementById('newev-id-msg');
+  const btn = document.getElementById('newev-create');
+  if (!v) { msg.textContent = ''; msg.style.color = 'var(--txm)'; btn.disabled = true; return; }
+  if (!validEventId(v)) {
+    msg.textContent = 'Invalid: lowercase a–z, 0–9, hyphens only; no leading/trailing hyphen; max 60.';
+    msg.style.color = 'var(--dan)';
+    btn.disabled = true;
+    return;
+  }
+  // Check uniqueness against /eventIndex/.
+  fbDb.ref('eventIndex/' + v).once('value').then(snap => {
+    if (snap.exists()) {
+      msg.textContent = 'An event with this ID already exists.';
+      msg.style.color = 'var(--dan)';
+      btn.disabled = true;
+    } else {
+      msg.textContent = 'Available.';
+      msg.style.color = 'var(--suc,#50b478)';
+      btn.disabled = false;
+    }
+  }).catch(() => { btn.disabled = true; });
+}
+function confirmNewEvent() {
+  const id = (document.getElementById('newev-id').value || '').trim();
+  const name = (document.getElementById('newev-name').value || '').trim();
+  const date = (document.getElementById('newev-date').value || '').trim();
+  if (!validEventId(id)) { toast('Invalid event ID'); return; }
+  if (!name) { toast('Event name required'); return; }
+  // Switch to the new event with empty cx and a fresh cfg.
+  if (fbApp && fbDb) {
+    fbListeners.forEach(l => l.ref.off(l.event, l.cb));
+    fbListeners = [];
+    cfg = Object.assign({}, cfg, { eventId: id, name: name, eventDate: date, mode: 'edit' });
+    cx = [];
+    fbEventId = id;
+    fbRef = fbDb.ref('events/' + id);
+    bindEventListeners();
+    fbWriteCfg();
+    fbWriteCx();
+    fbWriteEventIndex();
+    const box = document.getElementById('eid-box');
+    if (box) { box.style.display = 'flex'; document.getElementById('eid-val').textContent = id; }
+    setFbStatus('Connected to event: ' + id);
+  }
+  syncCfgToUI();
+  applyMode();
+  refreshEventLibraryCard();
+  rebuildFilters();
+  renderAll();
+  closeNewEventMo();
+  toast('Created event ' + id);
+}
+
+// ── DELETE EVENT MODAL ───────────────────────────────────────────
+let _delEvSnapshot = null;
+let _delEvUndoTimer = null;
+
+function openDeleteEventMo() {
+  if (!fbConnected) { toast('Connect Firebase first'); return; }
+  const id = cfg.eventId || '';
+  const name = cfg.name || '';
+  document.getElementById('del-ev-id-display').textContent = id;
+  document.getElementById('del-ev-name-display').textContent = name;
+  document.getElementById('del-ev-meta').textContent =
+    cx.length + ' competitors · ' + (cfg.eventDate || 'no date set');
+  document.getElementById('del-ev-id-inp').value = '';
+  document.getElementById('del-ev-name-inp').value = '';
+  document.getElementById('del-ev-step1-btn').disabled = true;
+  document.getElementById('del-ev-step1').style.display = 'block';
+  document.getElementById('del-ev-step2').style.display = 'none';
+  document.getElementById('del-ev-final-id').textContent = id;
+  document.getElementById('mo-del-ev').classList.add('show');
+}
+function closeDeleteEventMo() {
+  document.getElementById('mo-del-ev').classList.remove('show');
+}
+function validateDeleteEvent() {
+  const id = cfg.eventId || '';
+  const name = cfg.name || '';
+  const idIn = document.getElementById('del-ev-id-inp').value;
+  const nmIn = document.getElementById('del-ev-name-inp').value;
+  document.getElementById('del-ev-step1-btn').disabled = !(idIn === id && nmIn === name);
+}
+function advanceDeleteEvent() {
+  document.getElementById('del-ev-step1').style.display = 'none';
+  document.getElementById('del-ev-step2').style.display = 'block';
+}
+function exportBeforeDelete() {
+  saveSession();
+}
+function confirmDeleteEvent() {
+  const id = cfg.eventId || '';
+  if (!id) { closeDeleteEventMo(); return; }
+  // Take an in-memory snapshot so Undo can restore.
+  _delEvSnapshot = {
+    eventId: id,
+    cfg: JSON.parse(JSON.stringify(cfg)),
+    cx:  JSON.parse(JSON.stringify(cx)),
+    indexEntry: null
+  };
+  fbDb.ref('eventIndex/' + id).once('value').then(snap => {
+    _delEvSnapshot.indexEntry = snap.val() || null;
+  });
+  // Delete both nodes.
+  const events = fbDb.ref('events/' + id).remove();
+  const index  = fbDb.ref('eventIndex/' + id).remove();
+  Promise.all([events, index]).then(() => {
+    closeDeleteEventMo();
+    showDeleteUndoBar(id);
+  }).catch(err => {
+    console.error('delete event:', err);
+    toast('Delete failed — see console');
+  });
+}
+function showDeleteUndoBar(deletedId) {
+  // Reuse the existing undo bar slot if there is one; otherwise build a transient toast-style bar.
+  let bar = document.getElementById('del-ev-undo');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'del-ev-undo';
+    bar.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--sur2);border:1px solid var(--wrn);color:var(--tx);padding:var(--sp3) var(--sp5);border-radius:var(--r-md);font-size:var(--text-sm);z-index:9999;display:flex;align-items:center;gap:var(--sp4);box-shadow:0 4px 18px rgba(0,0,0,0.4)';
+    document.body.appendChild(bar);
+  }
+  bar.innerHTML = 'Event <strong>' + esc(deletedId) + '</strong> deleted. '
+    + '<button class="btn btn-pri btn-sm" id="del-ev-undo-btn">Undo</button>'
+    + '<span id="del-ev-undo-timer" style="color:var(--txm);font-size:var(--text-xs)">15s</span>';
+  bar.style.display = 'flex';
+  let remaining = 15;
+  const timerEl = document.getElementById('del-ev-undo-timer');
+  const undoBtn = document.getElementById('del-ev-undo-btn');
+  undoBtn.onclick = () => undoDeleteEvent();
+  if (_delEvUndoTimer) clearInterval(_delEvUndoTimer);
+  _delEvUndoTimer = setInterval(() => {
+    remaining--;
+    if (timerEl) timerEl.textContent = remaining + 's';
+    if (remaining <= 0) {
+      clearInterval(_delEvUndoTimer);
+      _delEvUndoTimer = null;
+      _delEvSnapshot = null;
+      bar.style.display = 'none';
+    }
+  }, 1000);
+  // After delete, if we deleted the currently-loaded event, clear local state too.
+  if (_delEvSnapshot && _delEvSnapshot.eventId === (cfg.eventId || '')) {
+    cx = [];
+    cfg.eventId = '';
+    syncCfgToUI();
+    refreshEventLibraryCard();
+    rebuildFilters();
+    renderAll();
+  }
+}
+function undoDeleteEvent() {
+  if (!_delEvSnapshot) return;
+  const snap = _delEvSnapshot;
+  // Re-write event payload, cfg, and index entry.
+  if (fbDb && fbConnected) {
+    const ref = fbDb.ref('events/' + snap.eventId);
+    const data = {};
+    snap.cx.forEach(c => { const { _wantSlot, ...clean } = c; data[c.id] = clean; });
+    ref.child('competitors').set(data);
+    ref.child('config').set(snap.cfg);
+    if (snap.indexEntry) fbDb.ref('eventIndex/' + snap.eventId).set(snap.indexEntry);
+    else fbWriteEventIndex();
+    // Reload locally.
+    cfg = Object.assign({}, snap.cfg);
+    cx  = snap.cx.map(c => Object.assign({}, c));
+    syncCfgToUI();
+    applyMode();
+    refreshEventLibraryCard();
+    rebuildFilters();
+    renderAll();
+  }
+  if (_delEvUndoTimer) { clearInterval(_delEvUndoTimer); _delEvUndoTimer = null; }
+  _delEvSnapshot = null;
+  const bar = document.getElementById('del-ev-undo');
+  if (bar) bar.style.display = 'none';
+  toast('Delete undone — event restored');
+}
+
+// Human-readable relative time ("2h ago", "3d ago", "just now")
+function relTime(ms) {
+  const d = Date.now() - ms;
+  if (d < 60000) return 'just now';
+  if (d < 3600000) return Math.floor(d/60000) + 'm ago';
+  if (d < 86400000) return Math.floor(d/3600000) + 'h ago';
+  return Math.floor(d/86400000) + 'd ago';
+}
+
 // ── CONFIG ───────────────────────────────────────────────
 function saveCfg(){
   // Validate Event ID first — refuse to save an invalid one because
@@ -1561,6 +2038,7 @@ function parseCSV(text) {
 }
 
 function impCSV(e){
+  if(isReadOnly()){toast('Read-only mode — CSV import is locked'); e.target.value=''; return;}
   const file=e.target.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=ev=>{
@@ -1648,7 +2126,7 @@ function closeCsvErrMo() {
 }
 
 // ── SESSION EXPORT / IMPORT ──────────────────────────────
-const SESSION_VERSION = 3;
+const SESSION_VERSION = 4;
 
 // Format Date as YYYYMMDD-HHMMSS in local time for filenames.
 function sessStamp(d) {
@@ -1869,6 +2347,10 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
 // ── INIT ─────────────────────────────────────────────────
 setSyncStatus('offline', 'Local');
 // No seed data — roster starts empty and is populated via Import CSV.
+// Block 2: ensure cfg.mode has a default and apply read-only state.
+if (!cfg.mode) cfg.mode = 'edit';
+applyMode();
+refreshEventLibraryCard();
 renderAll();
 
 // Auto-connect if hardcoded config is present.
