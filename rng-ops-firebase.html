@@ -432,6 +432,18 @@ body.readonly .nav-i .lock-bdg{display:inline-block}
 <div class="page" id="page-config">
   <div class="cfg-grid">
     <div class="cfg-c">
+      <!-- Account (Block 4) -->
+      <div style="border:1px solid var(--bdr);border-radius:var(--r-md);padding:var(--sp4);margin-bottom:var(--sp5);background:var(--sur2)">
+        <h3 style="margin-bottom:var(--sp3)">Account</h3>
+        <div style="display:flex;align-items:center;gap:var(--sp3);flex-wrap:wrap">
+          <div style="flex:1;min-width:160px">
+            <div style="font-size:var(--text-xs);color:var(--txm)">Signed in as</div>
+            <div id="acct-email" style="font-size:var(--text-sm);color:var(--tx);font-weight:600">—</div>
+          </div>
+          <button class="btn btn-gho btn-sm" onclick="doSignOut()">Sign out</button>
+        </div>
+      </div>
+
       <h3>Event Settings</h3>
       <div class="f-row">
         <label class="f-lbl">Event ID <span style="color:var(--txf);font-weight:400">(lowercase a–z, 0–9, hyphens; max 60 chars)</span></label>
@@ -714,6 +726,24 @@ body.readonly .nav-i .lock-bdg{display:inline-block}
   <button onclick="hideUndoBar()" style="color:var(--txm);padding:var(--sp1)" aria-label="Dismiss">✕</button>
 </div>
 
+<!-- SIGN-IN MODAL (Block 4) — full-screen gate; hides the app until operator is authenticated. -->
+<div class="mo" id="mo-signin" style="background:rgba(0,0,0,.92);z-index:500">
+  <div class="md" style="max-width:380px">
+    <div style="display:flex;align-items:center;gap:var(--sp3);margin-bottom:var(--sp4)">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--pri)" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <div class="md-t" style="margin-bottom:0">RNG OPS · Operator Sign-In</div>
+    </div>
+    <p style="font-size:var(--text-sm);color:var(--txm);line-height:1.5;margin-bottom:var(--sp4)">Sign in with the operator account to access event data.</p>
+    <div class="f-row"><label class="f-lbl">Email</label><input class="f-inp" id="signin-email" type="email" autocomplete="username" placeholder="operator@example.com"></div>
+    <div class="f-row"><label class="f-lbl">Password</label><input class="f-inp" id="signin-pw" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+    <div id="signin-err" style="display:none;color:var(--dan);font-size:var(--text-xs);margin-top:var(--sp2)"></div>
+    <div class="md-act" style="margin-top:var(--sp4)">
+      <button class="btn btn-pri" id="signin-btn" onclick="doSignIn()" style="width:100%;justify-content:center">Sign in</button>
+    </div>
+    <div style="font-size:var(--text-xs);color:var(--txf);margin-top:var(--sp3);text-align:center">Session persists across reloads. Sign out from Event Config.</div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -850,6 +880,181 @@ function setSyncStatus(state, label) {
   lbl.textContent = label;
 }
 
+// ── PII LOCKDOWN (Block 4) ───────────────────────────────
+// PII fields live at events/<id>/private/<cxId> and are NEVER stored
+// at events/<id>/competitors/<cxId>. The operator app merges the two
+// nodes back into a single in-memory record for UI rendering.
+const PII_FIELDS = ['phone','email','address','paid','pmm','shirt'];
+
+// Split a competitor record into {pub: non-PII, priv: PII-only}.
+// _wantSlot is a UI-only field and is stripped from both halves.
+function splitCxRecord(c) {
+  const pub = {};
+  const priv = {};
+  Object.keys(c).forEach(k => {
+    if (k === '_wantSlot') return;
+    if (PII_FIELDS.indexOf(k) >= 0) priv[k] = c[k];
+    else pub[k] = c[k];
+  });
+  return { pub, priv };
+}
+
+// Merge a public+private pair back into a single record for UI use.
+function mergeCxRecord(pub, priv) {
+  return Object.assign({}, pub || {}, priv || {});
+}
+
+// Authenticated operator (set by onAuthStateChanged).
+let fbAuthUser = null;
+// True while migration is running so write-back from listeners is safe to ignore.
+let _migrationRunning = false;
+
+// ── AUTH UI (Block 4) ──────────────────────────────────
+function showSigninModal() {
+  const m = document.getElementById('mo-signin');
+  if (m) m.classList.add('open');
+  const err = document.getElementById('signin-err');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+}
+function hideSigninModal() {
+  const m = document.getElementById('mo-signin');
+  if (m) m.classList.remove('open');
+  const pw = document.getElementById('signin-pw');
+  if (pw) pw.value = '';
+}
+function doSignIn() {
+  const email = (document.getElementById('signin-email').value || '').trim();
+  const pw    = document.getElementById('signin-pw').value || '';
+  const errEl = document.getElementById('signin-err');
+  const btn   = document.getElementById('signin-btn');
+  if (!email || !pw) {
+    errEl.textContent = 'Email and password are required.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!fbApp) {
+    errEl.textContent = 'Firebase not initialized. Reload the page.';
+    errEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  firebase.auth(fbApp).signInWithEmailAndPassword(email, pw)
+    .then(() => {
+      // onAuthStateChanged will hide the modal and attach listeners.
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+    })
+    .catch(err => {
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+      let msg = err.message || 'Sign-in failed.';
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        msg = 'Invalid email or password.';
+      } else if (err.code === 'auth/too-many-requests') {
+        msg = 'Too many failed attempts. Try again in a few minutes.';
+      } else if (err.code === 'auth/network-request-failed') {
+        msg = 'Network error. Check your connection.';
+      }
+      errEl.textContent = msg;
+      errEl.style.display = 'block';
+    });
+}
+function doSignOut() {
+  if (!fbApp) return;
+  if (!confirm("Sign out? You'll need to sign back in to make changes.")) return;
+  firebase.auth(fbApp).signOut()
+    .then(() => {
+      // onAuthStateChanged will show the modal and clear UI.
+      toast('Signed out');
+      const emailEl = document.getElementById('acct-email');
+      if (emailEl) emailEl.textContent = '—';
+    })
+    .catch(err => {
+      console.error('Sign out error:', err);
+      toast('Sign-out failed: ' + err.message);
+    });
+}
+// Allow Enter key in password field to submit.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const m = document.getElementById('mo-signin');
+    if (m && m.classList.contains('open')) {
+      const ae = document.activeElement;
+      if (ae && (ae.id === 'signin-email' || ae.id === 'signin-pw')) {
+        e.preventDefault();
+        doSignIn();
+      }
+    }
+  }
+});
+
+// ── PII MIGRATION (Block 4) ─────────────────────────────
+// Auto-migrate ALL events on first operator login on each device.
+// Idempotent: re-running skips records that have no PII at competitors/<id>.
+// Flag stored in localStorage keyed by uid so different operator accounts
+// don't share migration state.
+async function runPiiMigrationOnce(uid) {
+  const flagKey = 'rng_pii_migrated_v1_' + uid;
+  if (localStorage.getItem(flagKey)) return;
+  if (!fbDb) {
+    // Listeners attach immediately; fbDb should be set. If not, defer once.
+    setTimeout(() => runPiiMigrationOnce(uid).catch(e => console.error(e)), 500);
+    return;
+  }
+  _migrationRunning = true;
+  console.log('[migration] Starting PII migration…');
+  let eventsProcessed = 0;
+  let recordsMoved = 0;
+  try {
+    const idxSnap = await fbDb.ref('eventIndex').once('value');
+    const idx = idxSnap.val() || {};
+    const eventIds = Object.keys(idx);
+    if (eventIds.length === 0) {
+      console.log('[migration] No events in index — nothing to migrate.');
+    }
+    for (const eid of eventIds) {
+      const cxSnap = await fbDb.ref('events/' + eid + '/competitors').once('value');
+      const cxAll = cxSnap.val() || {};
+      const update = {};
+      let moved = 0;
+      Object.keys(cxAll).forEach(cxId => {
+        const rec = cxAll[cxId] || {};
+        const piv = {};
+        let hasPii = false;
+        PII_FIELDS.forEach(f => {
+          if (rec[f] !== undefined && rec[f] !== null && rec[f] !== '') {
+            piv[f] = rec[f];
+            update['events/' + eid + '/competitors/' + cxId + '/' + f] = null;
+            hasPii = true;
+          }
+        });
+        if (hasPii) {
+          Object.keys(piv).forEach(f => {
+            update['events/' + eid + '/private/' + cxId + '/' + f] = piv[f];
+          });
+          moved++;
+        }
+      });
+      if (Object.keys(update).length > 0) {
+        await fbDb.ref().update(update);
+      }
+      eventsProcessed++;
+      recordsMoved += moved;
+      console.log('[migration] event=' + eid + ' moved=' + moved);
+    }
+    localStorage.setItem(flagKey, String(Date.now()));
+    console.log('[migration] DONE. events=' + eventsProcessed + ' records=' + recordsMoved);
+    if (recordsMoved > 0) toast('PII migration complete: ' + recordsMoved + ' record' + (recordsMoved === 1 ? '' : 's'));
+  } catch (err) {
+    console.error('[migration] FAILED:', err);
+    // Don't set flag — will retry on next sign-in.
+    toast('PII migration failed — will retry next sign-in');
+  } finally {
+    _migrationRunning = false;
+  }
+}
+
 function connectFirebase(fromFields) {
   // Pull config from UI fields if called from the button
   const config = fromFields === false ? FIREBASE_CONFIG : {
@@ -873,21 +1078,47 @@ function connectFirebase(fromFields) {
     fbApp = firebase.initializeApp(config);
 
     setSyncStatus('syncing', 'Signing in…');
-    setFbStatus('Signing in anonymously…');
+    setFbStatus('Initializing…');
 
-    // Anonymous auth — required by locked DB rules (auth != null).
-    // DB listeners are attached only AFTER sign-in succeeds.
-    firebase.auth(fbApp).signInAnonymously()
-      .then(cred => {
-        const uid = cred && cred.user ? cred.user.uid : '(unknown)';
-        console.log('Firebase auth uid:', uid);
-        attachFbListeners();
-      })
-      .catch(err => {
-        console.error('Firebase auth error:', err);
-        setFbStatus('Auth error: ' + err.message + ' — enable Anonymous sign-in in Firebase Console.', true);
-        setSyncStatus('offline', 'Auth error');
-      });
+    // Block 4: persistent email/password auth. Sets LOCAL persistence so the
+    // operator stays signed in across reloads, then watches onAuthStateChanged.
+    // The sign-in modal is shown by the auth watcher when no user is present;
+    // attachFbListeners() runs only AFTER a real user is detected.
+    const auth = firebase.auth(fbApp);
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+      .catch(err => console.warn('setPersistence failed (continuing):', err.message));
+
+    auth.onAuthStateChanged(user => {
+      fbAuthUser = user || null;
+      if (user) {
+        // Hide sign-in modal, show app.
+        hideSigninModal();
+        const emailEl = document.getElementById('acct-email');
+        if (emailEl) emailEl.textContent = user.email || '(no email)';
+        console.log('Firebase auth uid:', user.uid, 'email:', user.email);
+        setFbStatus('Signed in as ' + (user.email || user.uid));
+        // Attach listeners once per sign-in.
+        if (!fbDb) attachFbListeners();
+        // Run migration once per device per operator account.
+        runPiiMigrationOnce(user.uid).catch(err => console.error('Migration error:', err));
+      } else {
+        // Show sign-in modal, hide app data, detach listeners so the next
+        // sign-in re-attaches cleanly (and to stop permission_denied spam).
+        showSigninModal();
+        setFbStatus('Not signed in.');
+        setSyncStatus('offline', 'Signed out');
+        if (fbListeners && fbListeners.length) {
+          fbListeners.forEach(l => { try { l.ref.off(l.event, l.cb); } catch(e){} });
+          fbListeners = [];
+        }
+        if (fbDb) { try { fbDb.ref('.info/connected').off(); } catch(e){} }
+        fbDb = null; fbRef = null; fbEventId = null; fbConnected = false;
+        cx = [];
+        renderAll();
+        const box = document.getElementById('eid-box');
+        if (box) box.style.display = 'none';
+      }
+    });
   } catch (err) {
     setFbStatus('Error: ' + err.message, true);
     setSyncStatus('offline', 'Error');
@@ -936,10 +1167,16 @@ function attachFbListeners() {
 // changes mid-session. Caller is responsible for fbRef pointing at the
 // correct events/<eventId> node before calling.
 function bindEventListeners() {
-  const cxListener = fbRef.child('competitors').on('value', snap => {
-    const data = snap.val();
-    if (data && !_suppressWrite) {
-      cx = Object.values(data).map(c => ({
+  // Block 4: separate caches for public + private; merged on every change
+  // so the existing UI keeps a unified record per competitor.
+  let _pubCache = {};
+  let _privCache = {};
+  function rebuildMergedCx() {
+    if (_suppressWrite || _migrationRunning) return;
+    const ids = new Set([...Object.keys(_pubCache), ...Object.keys(_privCache)]);
+    cx = Array.from(ids).map(id => {
+      const c = mergeCxRecord(_pubCache[id], _privCache[id]);
+      return {
         ...c,
         _changes: c._changes || [],
         squad: parseInt(c.squad) || 1,
@@ -947,13 +1184,26 @@ function bindEventListeners() {
         dnf: !!c.dnf,
         startMs: c.startMs || null,
         finishMs: c.finishMs || null,
-      }));
-      rebuildFilters(); renderAll();
-    }
+      };
+    });
+    rebuildFilters(); renderAll();
+  }
+
+  const cxListener = fbRef.child('competitors').on('value', snap => {
+    _pubCache = snap.val() || {};
+    rebuildMergedCx();
   }, err => {
     console.error('Firebase competitors read error:', err);
     setFbStatus('Read error: ' + err.message, true);
     setSyncStatus('offline', 'Permission denied');
+  });
+
+  const privListener = fbRef.child('private').on('value', snap => {
+    _privCache = snap.val() || {};
+    rebuildMergedCx();
+  }, err => {
+    console.error('Firebase private read error:', err);
+    // Don't surface as critical — staff/legacy events may have no private node.
   });
 
   const cfgListener = fbRef.child('config').on('value', snap => {
@@ -972,6 +1222,7 @@ function bindEventListeners() {
 
   fbListeners = [
     { ref: fbRef.child('competitors'), event: 'value', cb: cxListener },
+    { ref: fbRef.child('private'),     event: 'value', cb: privListener },
     { ref: fbRef.child('config'),      event: 'value', cb: cfgListener },
   ];
 }
@@ -993,28 +1244,45 @@ function setFbStatus(msg, isErr) {
   if (el) { el.textContent = msg; el.style.color = isErr ? 'var(--dan)' : 'var(--txm)'; }
 }
 
-// Write all competitors to Firebase
+// Write all competitors to Firebase, splitting PII into the private node.
 function fbWriteCx() {
   if (!fbRef || !fbConnected) return;
   _suppressWrite = true;
-  const data = {};
+  const pubData = {};
+  const privData = {};
   cx.forEach(c => {
-    // Strip private keys that can't serialize cleanly
-    const { _wantSlot, ...clean } = c;
-    data[c.id] = clean;
+    const { pub, priv } = splitCxRecord(c);
+    pubData[c.id]  = pub;
+    privData[c.id] = priv;
   });
-  fbRef.child('competitors').set(data)
+  const update = {};
+  update[fbEventId + '/competitors'] = pubData;
+  update[fbEventId + '/private']     = privData;
+  fbDb.ref('events').update(update)
     .then(() => { _suppressWrite = false; setSyncStatus('online', 'Online'); fbWriteEventIndex(); })
     .catch(err => { _suppressWrite = false; console.error(err); setSyncStatus('offline', 'Sync error'); });
   setSyncStatus('syncing', 'Saving…');
 }
 
-// Write a single competitor field — more efficient than full write
+// Write a single competitor — splits PII into the private node.
 function fbWriteOne(c) {
   if (!fbRef || !fbConnected) return;
-  const { _wantSlot, ...clean } = c;
-  fbRef.child('competitors/' + c.id).set(clean)
+  const { pub, priv } = splitCxRecord(c);
+  const update = {};
+  update['competitors/' + c.id] = pub;
+  update['private/'     + c.id] = priv;
+  fbRef.update(update)
     .catch(err => console.error('fbWriteOne:', err));
+}
+
+// Delete a single competitor from both public and private nodes.
+function fbDeleteOne(cxId) {
+  if (!fbRef || !fbConnected) return;
+  const update = {};
+  update['competitors/' + cxId] = null;
+  update['private/'     + cxId] = null;
+  fbRef.update(update)
+    .catch(err => console.error('fbDeleteOne:', err));
 }
 
 // Write config to Firebase
@@ -1056,7 +1324,9 @@ function confirmClear() {
   undoData = JSON.parse(JSON.stringify(cx));
   cx = [];
   if (fbRef && fbConnected) {
-    fbRef.child('competitors').remove().catch(err => console.error(err));
+    // Block 4: clear both the public competitors node and the private PII node.
+    fbRef.update({ competitors: null, private: null })
+      .catch(err => console.error('confirmClear:', err));
   }
   closeClearMo();
   rebuildFilters(); renderAll();
@@ -1877,9 +2147,16 @@ function undoDeleteEvent() {
   // Re-write event payload, cfg, and index entry.
   if (fbDb && fbConnected) {
     const ref = fbDb.ref('events/' + snap.eventId);
-    const data = {};
-    snap.cx.forEach(c => { const { _wantSlot, ...clean } = c; data[c.id] = clean; });
-    ref.child('competitors').set(data);
+    // Block 4: restore both public (non-PII) and private (PII) competitor halves.
+    const pubData = {};
+    const privData = {};
+    snap.cx.forEach(c => {
+      const { pub, priv } = splitCxRecord(c);
+      pubData[c.id]  = pub;
+      privData[c.id] = priv;
+    });
+    ref.child('competitors').set(pubData);
+    ref.child('private').set(privData);
     ref.child('config').set(snap.cfg);
     if (snap.indexEntry) fbDb.ref('eventIndex/' + snap.eventId).set(snap.indexEntry);
     else fbWriteEventIndex();
