@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1117">
+<title>RNG OPS — Staff</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+
+<!-- Firebase compat SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+<!-- Shared Firebase config -->
+<script src="rng-fb-config.js"></script>
+
+<style>
+:root {
+  --text-xs:clamp(0.75rem,0.7rem+0.25vw,0.875rem);
+  --text-sm:clamp(0.875rem,0.8rem+0.35vw,1rem);
+  --text-base:clamp(1rem,0.95rem+0.25vw,1.125rem);
+  --text-lg:clamp(1.125rem,1rem+0.75vw,1.5rem);
+  --text-xl:clamp(1.5rem,1.2rem+1.25vw,2.25rem);
+  --sp1:.25rem;--sp2:.5rem;--sp3:.75rem;--sp4:1rem;--sp5:1.25rem;--sp6:1.5rem;--sp8:2rem;
+  --r-sm:.375rem;--r-md:.5rem;--r-lg:.75rem;--r-full:9999px;
+  --tr:180ms cubic-bezier(0.16,1,0.3,1);
+  --font:'Satoshi','Inter',sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#0f1117;--sur:#171a23;--sur2:#1e2130;--sur3:#252840;
+  --bdr:rgba(255,255,255,0.08);--bdr2:rgba(255,255,255,0.15);
+  --tx:#e8eaf0;--txm:#8b90a0;--txf:#4a5060;
+  --pri:#3fb8c8;--prih:#2da0b0;--prid:rgba(63,184,200,0.12);
+  --suc:#4caf7d;--sucd:rgba(76,175,125,0.15);
+  --wrn:#f0a840;--wrnd:rgba(240,168,64,0.15);
+  --dan:#e05c6a;--dand:rgba(224,92,106,0.15);
+  --yel:#e8c84a;--yeld:rgba(232,200,74,0.15);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg)}
+body{
+  font-family:var(--font);font-size:var(--text-sm);color:var(--tx);
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:calc(env(safe-area-inset-bottom,0) + var(--sp4));
+}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+
+/* ── Header ───────────────────────────────────────── */
+.top{
+  position:sticky;top:0;z-index:20;
+  background:var(--sur);
+  border-bottom:1px solid var(--bdr);
+  padding:max(env(safe-area-inset-top,0),var(--sp2)) var(--sp4) var(--sp3);
+}
+.top-row1{display:flex;align-items:center;gap:var(--sp3);min-height:36px}
+.brand{font-size:var(--text-base);font-weight:700;color:var(--tx);letter-spacing:.02em}
+.brand .lite{color:var(--pri);font-weight:500;margin-left:var(--sp1)}
+.top-spacer{flex:1}
+.pill{
+  display:inline-flex;align-items:center;gap:var(--sp1);
+  padding:3px var(--sp2);border-radius:var(--r-full);
+  font-size:11px;font-weight:600;letter-spacing:.02em;
+  background:var(--sur2);color:var(--txm);
+  white-space:nowrap;
+}
+.pill.lock-on{background:var(--sucd);color:var(--suc)}
+.pill.lock-off{background:var(--sur2);color:var(--txf)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--txf);flex-shrink:0}
+.dot.green{background:var(--suc);box-shadow:0 0 6px var(--suc)}
+.dot.amber{background:var(--wrn);box-shadow:0 0 6px var(--wrn)}
+.dot.red{background:var(--dan);box-shadow:0 0 6px var(--dan)}
+.top-row2{
+  display:flex;align-items:baseline;gap:var(--sp2);
+  margin-top:var(--sp2);
+  font-size:var(--text-xs);color:var(--txm);
+  flex-wrap:wrap;
+}
+.evt-name{color:var(--tx);font-weight:600;font-size:var(--text-sm)}
+.evt-id{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--txm)}
+
+/* ── Reconnect banner ─────────────────────────────── */
+.reconn{
+  display:none;
+  background:var(--wrnd);color:var(--wrn);
+  border-bottom:1px solid var(--wrn);
+  padding:var(--sp3) var(--sp4);
+  font-size:var(--text-sm);
+  align-items:center;gap:var(--sp3);
+  position:sticky;top:0;z-index:25;
+}
+.reconn.show{display:flex}
+.reconn-msg{flex:1}
+.reconn-btn{
+  background:var(--wrn);color:#1a1100;
+  padding:var(--sp2) var(--sp3);border-radius:var(--r-md);
+  font-weight:600;font-size:var(--text-xs);
+  min-height:32px;
+}
+.reconn-btn:active{transform:translateY(1px)}
+
+/* ── Picker ───────────────────────────────────────── */
+.picker{padding:var(--sp5) var(--sp4);max-width:520px;margin:0 auto}
+.picker h2{font-size:var(--text-lg);color:var(--tx);margin-bottom:var(--sp2)}
+.picker p{color:var(--txm);font-size:var(--text-sm);margin-bottom:var(--sp4)}
+.pk-list{display:flex;flex-direction:column;gap:var(--sp2)}
+.pk-item{
+  background:var(--sur);border:1px solid var(--bdr);
+  border-radius:var(--r-md);padding:var(--sp3) var(--sp4);
+  display:flex;align-items:center;justify-content:space-between;
+  cursor:pointer;transition:background var(--tr),border-color var(--tr);
+  min-height:56px;
+}
+.pk-item:active{background:var(--sur2);border-color:var(--bdr2)}
+.pk-l{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.pk-name{font-size:var(--text-sm);font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pk-meta{font-size:var(--text-xs);color:var(--txm)}
+.pk-arrow{color:var(--txf);font-size:18px;margin-left:var(--sp3)}
+.pk-empty{color:var(--txm);font-style:italic;padding:var(--sp4);text-align:center}
+
+/* ── Sections ─────────────────────────────────────── */
+.sections{padding:var(--sp3) var(--sp3) var(--sp8)}
+.sec{
+  background:var(--sur);
+  border:1px solid var(--bdr);
+  border-radius:var(--r-md);
+  margin-bottom:var(--sp3);
+  overflow:hidden;
+}
+.sec-hdr{
+  display:flex;align-items:center;gap:var(--sp3);
+  padding:var(--sp4);
+  width:100%;min-height:56px;
+  background:var(--sur2);
+  border-bottom:1px solid var(--bdr);
+  text-align:left;
+  transition:background var(--tr);
+}
+.sec-hdr:active{background:var(--sur3)}
+.sec.closed .sec-hdr{border-bottom-color:transparent}
+.sec-caret{
+  font-size:14px;color:var(--txm);
+  transition:transform var(--tr);
+  width:16px;text-align:center;
+  flex-shrink:0;
+}
+.sec.closed .sec-caret{transform:rotate(-90deg)}
+.sec-name{font-size:var(--text-sm);font-weight:700;color:var(--tx);letter-spacing:.02em;flex:1}
+.sec-count{
+  font-size:var(--text-xs);font-weight:600;
+  background:var(--sur3);color:var(--txm);
+  padding:2px var(--sp2);border-radius:var(--r-full);
+  min-width:28px;text-align:center;
+}
+.sec.ondeck .sec-count{background:var(--prid);color:var(--pri)}
+.sec.running .sec-count{background:var(--wrnd);color:var(--wrn)}
+.sec.done .sec-count{background:var(--sucd);color:var(--suc)}
+.sec-body{display:none}
+.sec:not(.closed) .sec-body{display:block}
+.sec-empty{padding:var(--sp4);color:var(--txm);font-style:italic;text-align:center;font-size:var(--text-xs)}
+
+/* ── Rows ─────────────────────────────────────────── */
+.row{
+  display:flex;align-items:center;gap:var(--sp3);
+  padding:var(--sp3) var(--sp4);
+  border-bottom:1px solid var(--bdr);
+  min-height:60px;
+}
+.row:last-child{border-bottom:none}
+.row-bib{
+  font-family:ui-monospace,SFMono-Regular,monospace;
+  font-size:var(--text-base);font-weight:700;
+  color:var(--pri);
+  min-width:48px;text-align:left;flex-shrink:0;
+}
+.row-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.row-name{font-size:var(--text-sm);font-weight:600;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-meta{font-size:var(--text-xs);color:var(--txm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}
+.row-r .clock{
+  font-family:ui-monospace,SFMono-Regular,monospace;
+  font-size:var(--text-sm);font-weight:600;color:var(--tx);
+  font-variant-numeric:tabular-nums;
+}
+.row-r .start{font-size:11px;color:var(--txm);font-variant-numeric:tabular-nums}
+.badge{
+  display:inline-block;padding:2px var(--sp2);
+  border-radius:var(--r-sm);
+  font-size:10px;font-weight:700;letter-spacing:.05em;
+}
+.badge.done{background:var(--sucd);color:var(--suc)}
+.badge.dnf{background:var(--dand);color:var(--dan)}
+.badge.obs{background:var(--yeld);color:var(--yel);margin-right:var(--sp1)}
+
+/* ── Footer ──────────────────────────────────────── */
+.foot{
+  padding:var(--sp4);text-align:center;
+  color:var(--txf);font-size:11px;
+  border-top:1px solid var(--bdr);
+  margin-top:var(--sp4);
+}
+.foot a{color:var(--txm);text-decoration:none}
+.foot a:active{color:var(--pri)}
+</style>
+</head>
+<body>
+
+<div class="reconn" id="reconn-banner" role="status" aria-live="polite">
+  <span class="reconn-msg" id="reconn-msg">Reconnecting…</span>
+  <button class="reconn-btn" onclick="retryNow()">Retry now</button>
+</div>
+
+<header class="top">
+  <div class="top-row1">
+    <div class="brand">RNG OPS<span class="lite">staff</span></div>
+    <div class="top-spacer"></div>
+    <span class="pill" id="lock-pill">
+      <span class="dot"></span>
+      <span id="lock-lbl">Screen lock: off</span>
+    </span>
+    <span class="pill" id="conn-pill">
+      <span class="dot" id="conn-dot"></span>
+      <span id="conn-lbl">offline</span>
+    </span>
+  </div>
+  <div class="top-row2" id="evt-line">
+    <span class="evt-name" id="evt-name">—</span>
+    <span class="evt-id" id="evt-id"></span>
+  </div>
+</header>
+
+<main id="main"></main>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  RNG OPS Staff View
+//  Read-only. Subscribes to events/<eventId>/competitors and
+//  events/<eventId>/config. No write paths.
+// ════════════════════════════════════════════════════════════
+
+// ── State ─────────────────────────────────────────
+let fbApp = null, fbDb = null;
+let cx = [];
+let cfg = null;
+let eventId = null;
+let listeners = [];        // {ref, evt, fn}
+let connected = false;
+let retryTimer = null;
+let retryAttempt = 0;
+
+// Section open/closed (all closed by default per spec)
+const sec = { ondeck:false, running:false, done:false };
+
+// Live elapsed timer — only when Running expanded
+let elapsedTimer = null;
+
+// Wake-lock
+let wakeLock = null;
+
+// ── URL params ───────────────────────────────────
+function getParam(k){ return new URLSearchParams(location.search).get(k); }
+
+// ── Connection UI ────────────────────────────────
+function setConn(state, label){
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-lbl');
+  dot.className = 'dot ' + state;
+  lbl.textContent = label;
+}
+function showReconnect(show, msg){
+  const b = document.getElementById('reconn-banner');
+  if (msg) document.getElementById('reconn-msg').textContent = msg;
+  b.classList.toggle('show', show);
+}
+
+// ── Wake-lock ────────────────────────────────────
+async function acquireWakeLock(){
+  if (!('wakeLock' in navigator)) {
+    setLockPill(false, 'unsupported');
+    return;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    setLockPill(true, 'on');
+    wakeLock.addEventListener('release', () => {
+      setLockPill(false, 'off');
+    });
+  } catch (e) {
+    setLockPill(false, 'off');
+  }
+}
+function setLockPill(on, label){
+  const pill = document.getElementById('lock-pill');
+  const lbl  = document.getElementById('lock-lbl');
+  pill.classList.toggle('lock-on', on);
+  pill.classList.toggle('lock-off', !on);
+  lbl.textContent = 'Screen lock: ' + label;
+}
+// iOS Safari releases the lock when the tab backgrounds.
+// Re-acquire when visible again.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && wakeLock === null) {
+    acquireWakeLock();
+  }
+});
+
+// ── Firebase connect ─────────────────────────────
+function connect(){
+  if (!window.FIREBASE_CONFIG) {
+    setConn('red','config error');
+    return;
+  }
+  try {
+    try { firebase.app().delete(); } catch(e){}
+    fbApp = firebase.initializeApp(window.FIREBASE_CONFIG);
+    setConn('amber','signing in');
+    firebase.auth(fbApp).signInAnonymously()
+      .then(() => { fbDb = firebase.database(fbApp); bindEvent(); })
+      .catch(err => onConnFail('auth: ' + err.message));
+  } catch (err) {
+    onConnFail('init: ' + err.message);
+  }
+}
+function onConnFail(msg){
+  connected = false;
+  setConn('red','offline');
+  showReconnect(true, 'Reconnecting… (' + msg + ')');
+  scheduleRetry();
+}
+function bindEvent(){
+  if (!eventId) return;
+  detachAll();
+  const base = fbDb.ref('events/' + eventId);
+
+  // Connection state
+  const connRef = fbDb.ref('.info/connected');
+  const connFn = connRef.on('value', snap => {
+    const ok = snap.val() === true;
+    connected = ok;
+    if (ok) {
+      setConn('green','live');
+      showReconnect(false);
+      retryAttempt = 0;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    } else {
+      setConn('red','offline');
+      showReconnect(true, 'Reconnecting…');
+      scheduleRetry();
+    }
+  });
+  listeners.push({ref:connRef, evt:'value', fn:connFn});
+
+  // Config
+  const cfgRef = base.child('config');
+  const cfgFn = cfgRef.on('value', snap => {
+    cfg = snap.val() || {};
+    updateEventLine();
+  }, err => onConnFail('cfg: ' + err.message));
+  listeners.push({ref:cfgRef, evt:'value', fn:cfgFn});
+
+  // Competitors
+  const cxRef = base.child('competitors');
+  const cxFn = cxRef.on('value', snap => {
+    const val = snap.val();
+    cx = val ? Object.values(val) : [];
+    render();
+  }, err => onConnFail('cx: ' + err.message));
+  listeners.push({ref:cxRef, evt:'value', fn:cxFn});
+}
+function detachAll(){
+  listeners.forEach(l => { try { l.ref.off(l.evt, l.fn); } catch(e){} });
+  listeners = [];
+}
+function scheduleRetry(){
+  if (retryTimer) return;
+  retryAttempt++;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    if (!connected) {
+      showReconnect(true, 'Reconnecting… (attempt ' + retryAttempt + ')');
+      // Firebase SDK auto-reconnects; .info/connected will flip when it does.
+      // For a forced re-init (e.g. after auth expiry), call connect() again.
+      scheduleRetry();
+    }
+  }, 5000);
+}
+function retryNow(){
+  // Force a full re-init. Useful if SDK is stuck.
+  retryAttempt = 0;
+  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  showReconnect(true, 'Reconnecting now…');
+  detachAll();
+  connect();
+}
+
+// ── Event picker ─────────────────────────────────
+function showPicker(){
+  document.getElementById('evt-line').style.display = 'none';
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="picker">
+      <h2>Pick an event</h2>
+      <p>Tap an event below to start watching. The link will include <code>?event=&lt;id&gt;</code> so you can bookmark it.</p>
+      <div class="pk-list" id="pk-list"><div class="pk-empty">Loading…</div></div>
+    </div>`;
+  if (!window.FIREBASE_CONFIG) { document.getElementById('pk-list').innerHTML = '<div class="pk-empty">Config missing.</div>'; return; }
+  try {
+    try { firebase.app().delete(); } catch(e){}
+    fbApp = firebase.initializeApp(window.FIREBASE_CONFIG);
+    setConn('amber','signing in');
+    firebase.auth(fbApp).signInAnonymously()
+      .then(() => {
+        fbDb = firebase.database(fbApp);
+        setConn('green','live');
+        fbDb.ref('eventIndex').once('value').then(snap => renderPicker(snap.val()))
+          .catch(err => { document.getElementById('pk-list').innerHTML = '<div class="pk-empty">Could not load events: ' + err.message + '</div>'; });
+      })
+      .catch(err => { setConn('red','offline'); document.getElementById('pk-list').innerHTML = '<div class="pk-empty">Auth failed: ' + err.message + '</div>'; });
+  } catch (e) {
+    document.getElementById('pk-list').innerHTML = '<div class="pk-empty">Init failed: ' + e.message + '</div>';
+  }
+}
+function renderPicker(idx){
+  const list = document.getElementById('pk-list');
+  if (!idx) { list.innerHTML = '<div class="pk-empty">No events yet. The operator hasn\u2019t created any.</div>'; return; }
+  const ids = Object.keys(idx).sort((a,b) => (idx[b].updatedAt||0) - (idx[a].updatedAt||0));
+  if (!ids.length) { list.innerHTML = '<div class="pk-empty">No events yet.</div>'; return; }
+  list.innerHTML = ids.map(id => {
+    const e = idx[id] || {};
+    const cnt = e.cxCount != null ? e.cxCount + ' competitor' + (e.cxCount === 1 ? '' : 's') : '';
+    const mode = e.mode === 'readonly' ? ' \u00b7 read-only' : '';
+    const date = e.date || e.day1 || '';
+    const meta = [date, cnt].filter(Boolean).join(' \u00b7 ') + mode;
+    return `<a class="pk-item" href="?event=${encodeURIComponent(id)}">
+      <span class="pk-l">
+        <span class="pk-name">${esc(e.name || id)}</span>
+        <span class="pk-meta">${esc(meta || id)}</span>
+      </span>
+      <span class="pk-arrow">\u203A</span>
+    </a>`;
+  }).join('');
+}
+
+// ── Rendering ────────────────────────────────────
+function updateEventLine(){
+  if (!cfg) return;
+  document.getElementById('evt-line').style.display = '';
+  document.getElementById('evt-name').textContent = cfg.name || eventId;
+  document.getElementById('evt-id').textContent  = eventId ? '\u00b7 ' + eventId : '';
+}
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fmtClock(ms){
+  if (!ms) return '';
+  const d = new Date(ms);
+  return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+}
+function fmtElapsed(ms){
+  if (ms < 0) ms = 0;
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  return m + ':' + pad2(ss);
+}
+function fmtFinal(startMs, finishMs, obs, penaltySec){
+  if (!startMs || !finishMs) return '';
+  const raw = finishMs - startMs;
+  const pen = (obs || 0) * (penaltySec || 0) * 1000;
+  return fmtElapsed(raw + pen);
+}
+
+function partition(){
+  const ondeck = [], running = [], done = [];
+  for (const c of cx) {
+    if (c.fi || c.dnf)            done.push(c);
+    else if (c.st)                running.push(c);
+    else if (c.ci === 'in')       ondeck.push(c);
+  }
+  const byBib = (a,b) => (parseInt(a.bib)||0) - (parseInt(b.bib)||0);
+  const byStart = (a,b) => (a.st||0) - (b.st||0);
+  const byFinish = (a,b) => (a.fi||b.fi||0) - (b.fi||a.fi||0);
+  ondeck.sort(byBib);
+  running.sort(byStart);
+  done.sort(byFinish);
+  return { ondeck, running, done };
+}
+
+function rowOnDeck(c){
+  return `<div class="row" data-id="${c.id}">
+    <span class="row-bib">${esc(c.bib || '\u2014')}</span>
+    <span class="row-mid">
+      <span class="row-name">${esc((c.last || '') + ', ' + (c.first || ''))}</span>
+      <span class="row-meta">${esc(c.div || '')}${c.sq ? ' \u00b7 sq ' + esc(c.sq) : ''}</span>
+    </span>
+  </div>`;
+}
+function rowRunning(c){
+  return `<div class="row" data-id="${c.id}" data-st="${c.st || 0}">
+    <span class="row-bib">${esc(c.bib || '\u2014')}</span>
+    <span class="row-mid">
+      <span class="row-name">${esc((c.last || '') + ', ' + (c.first || ''))}</span>
+      <span class="row-meta">${esc(c.div || '')}${c.sq ? ' \u00b7 sq ' + esc(c.sq) : ''}</span>
+    </span>
+    <span class="row-r">
+      <span class="clock elapsed">${fmtElapsed(Date.now() - c.st)}</span>
+      <span class="start">started ${fmtClock(c.st)}</span>
+    </span>
+  </div>`;
+}
+function rowDone(c){
+  const isDnf = !!c.dnf;
+  const badge = isDnf ? '<span class="badge dnf">DNF</span>' : '<span class="badge done">DONE</span>';
+  const obs = c.ob ? `<span class="badge obs">+${c.ob}</span>` : '';
+  const final = isDnf ? '' : fmtFinal(c.st, c.fi, c.ob, cfg && cfg.penalty);
+  const finishedAt = c.fi ? 'finished ' + fmtClock(c.fi) : '';
+  return `<div class="row" data-id="${c.id}">
+    <span class="row-bib">${esc(c.bib || '\u2014')}</span>
+    <span class="row-mid">
+      <span class="row-name">${esc((c.last || '') + ', ' + (c.first || ''))}</span>
+      <span class="row-meta">${esc(c.div || '')}${c.sq ? ' \u00b7 sq ' + esc(c.sq) : ''} ${obs}${badge}</span>
+    </span>
+    <span class="row-r">
+      <span class="clock">${final}</span>
+      <span class="start">${finishedAt}</span>
+    </span>
+  </div>`;
+}
+
+function render(){
+  const { ondeck, running, done } = partition();
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="sections">
+      ${renderSec('ondeck',  'On Deck',  ondeck,  rowOnDeck,  'No one checked in and waiting.')}
+      ${renderSec('running', 'Running',  running, rowRunning, 'No one on course.')}
+      ${renderSec('done',    'Done',     done,    rowDone,    'No finishers yet.')}
+      <div class="foot">
+        RNG OPS \u00b7 staff view \u00b7
+        <a href="?">switch event</a>
+      </div>
+    </div>`;
+  main.querySelectorAll('.sec-hdr').forEach(h => h.addEventListener('click', () => toggleSec(h.dataset.key)));
+  updateElapsedTimer();
+}
+function renderSec(key, name, items, rowFn, emptyMsg){
+  const closed = !sec[key] ? ' closed' : '';
+  const body = items.length
+    ? items.map(rowFn).join('')
+    : `<div class="sec-empty">${emptyMsg}</div>`;
+  return `<section class="sec ${key}${closed}">
+    <button class="sec-hdr" data-key="${key}" aria-expanded="${!!sec[key]}">
+      <span class="sec-caret">\u25BE</span>
+      <span class="sec-name">${name}</span>
+      <span class="sec-count">${items.length}</span>
+    </button>
+    <div class="sec-body">${body}</div>
+  </section>`;
+}
+function toggleSec(key){
+  sec[key] = !sec[key];
+  const el = document.querySelector('.sec.' + key);
+  if (el) {
+    el.classList.toggle('closed', !sec[key]);
+    el.querySelector('.sec-hdr').setAttribute('aria-expanded', String(!!sec[key]));
+  }
+  updateElapsedTimer();
+}
+function updateElapsedTimer(){
+  // Only tick when Running is expanded
+  if (sec.running) {
+    if (!elapsedTimer) {
+      elapsedTimer = setInterval(tickElapsed, 1000);
+    }
+    tickElapsed();
+  } else {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  }
+}
+function tickElapsed(){
+  const now = Date.now();
+  document.querySelectorAll('.sec.running .row').forEach(r => {
+    const st = parseInt(r.dataset.st || 0);
+    if (!st) return;
+    const el = r.querySelector('.elapsed');
+    if (el) el.textContent = fmtElapsed(now - st);
+  });
+}
+
+// ── Init ─────────────────────────────────────────
+window.addEventListener('load', () => {
+  acquireWakeLock();
+  eventId = getParam('event');
+  if (!eventId) {
+    showPicker();
+  } else {
+    document.getElementById('evt-name').textContent = eventId;
+    setConn('amber','connecting');
+    connect();
+  }
+});
+</script>
+</body>
+</html>
