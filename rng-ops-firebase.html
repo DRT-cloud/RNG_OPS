@@ -22,6 +22,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
+<!-- Shared Firebase config (sets window.FIREBASE_CONFIG). Block 3. -->
+<script src="rng-fb-config.js"></script>
+
 <style>
 :root {
   --text-xs:clamp(0.75rem,0.7rem+0.25vw,0.875rem);
@@ -714,20 +717,6 @@ body.readonly .nav-i .lock-bdg{display:inline-block}
 <div id="toast"></div>
 
 <script>
-// ════════════════════════════════════════════════════════════
-// FIREBASE CONFIG — paste your config values here OR use the
-// Event Config screen to enter them at runtime.
-// ════════════════════════════════════════════════════════════
-  const firebaseConfig = {
-  apiKey: "AIzaSyB5ABYEfXI_lJCfCz1lFPWg2jfE0ijKkdQ",
-  authDomain: "rng-ops.firebaseapp.com",
-  databaseURL: "https://rng-ops-default-rtdb.firebaseio.com",
-  projectId: "rng-ops",
-  storageBucket: "rng-ops.firebasestorage.app",
-  appId: "1:160728917123:web:2b525d93991bf5de2a27b6",
-};
-
-
 // ── STATE ────────────────────────────────────────────────
 let cx = [];
 let activeDay = 'All';
@@ -741,18 +730,10 @@ let undoData = null;
 let clearTimer = null;
 
 // ── FIREBASE CONFIG ──────────────────────────────────────
-// Web API keys are public-by-design — security is enforced by
-// Firebase Auth + DB rules (auth != null), not by hiding the key.
-const FIREBASE_CONFIG = {
-  apiKey:            'AIzaSyB5ABYEfXI_lJCfCz1lFPWg2jfE0ijKkdQ',
-  authDomain:        'rng-ops.firebaseapp.com',
-  databaseURL:       'https://rng-ops-default-rtdb.firebaseio.com',
-  projectId:         'rng-ops',
-  storageBucket:     'rng-ops.firebasestorage.app',
-  messagingSenderId: '160728917123',
-  appId:             '1:160728917123:web:2b525d93991bf5de2a27b6',
-  measurementId:     'G-BKYEKE7K5F'
-};
+// Loaded from rng-fb-config.js (window.FIREBASE_CONFIG). Web API keys
+// are public-by-design — security is enforced by Firebase Auth + DB
+// rules (auth != null), not by hiding the key.
+const FIREBASE_CONFIG = window.FIREBASE_CONFIG;
 
 // ── FIREBASE STATE ───────────────────────────────────────
 let fbApp  = null;   // firebase.app instance
