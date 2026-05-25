@@ -123,16 +123,20 @@ button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
 .sections{padding:var(--sp3) var(--sp3) var(--sp8)}
 .disc-banner{
   margin:var(--sp3) var(--sp3) 0;
-  padding:var(--sp2) var(--sp3);
+  padding:var(--sp2) var(--sp2);
   background:var(--yeld);
   color:var(--yel);
   border:1px solid var(--yel);
   border-radius:var(--r-md,8px);
-  font-size:var(--text-xs);
+  font-size:10px;
   font-weight:700;
-  letter-spacing:.04em;
+  letter-spacing:0;
   text-align:center;
   text-transform:uppercase;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  line-height:1.25;
 }
 .sec{
   background:var(--sur);
