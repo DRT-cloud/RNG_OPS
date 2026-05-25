@@ -1,662 +1,223 @@
-# RNG OPS — Build Specification (v2.5)
+# RNG OPS — Build Specification (v3.0)
 
-**Project:** RNG OPS
-**Purpose:** Event operations admin app for Run and Gun (RNG) biathlon events. Handles competitor check-in, start/finish timing, obstacle penalties, results, and roster management from a single browser window on a local event laptop, with read-only mobile views for staff and competitors via Firebase.
-**Current Build Status:** Phase 3 complete · Staff view shipped (`staff.html`) with collapsed sections, wake-lock, reconnect banner, theme parity · Firebase auth-locked · Netlify live at [rng-ops.netlify.app](https://rng-ops.netlify.app).
-**Operator account (Block 4):** `rng.ops.operator@gmail.com` (project-specific Gmail, not personal).
-**Supersedes:** rng-ops-spec.md v2.4.
-
-### What changed in Block 3 (this revision, 2026‑05‑25)
-
-- **Shared Firebase config.** `rng-fb-config.js` is the single source of truth. Both `rng-ops-firebase.html` and the new `staff.html` load it via `<script src="rng-fb-config.js">`. The inline `FIREBASE_CONFIG` literal and the dead `firebaseConfig` literal in the operator file were removed; `const FIREBASE_CONFIG = window.FIREBASE_CONFIG;` is now the only binding. The competitor view in Block 4 will load the same file.
-- **Staff view shipped (`staff.html`).** Mobile-first, read-only, no edit DOM. URL: `staff.html?event=<eventId>`. Anonymous auth. Subscribes to `events/<eventId>/competitors` and `events/<eventId>/config` via `on('value')`. Header shows event name, event ID pill, **Screen lock** pill, and connection dot. No `fbWriteCx`, no `fbWriteCfg`, no `set`/`update`/`remove`/`push` calls on any Firebase ref.
-- **Three collapsed sections (all closed by default).** Tap any header to expand:
-  - **On Deck** — `ci === 'in' && !st` (checked in, waiting to start).
-  - **Running** — `st && !fi && !dnf`; rows append start clock (HH:MM:SS) and live elapsed (`m:ss`).
-  - **Done** — `fi || dnf`; rows show final time (raw + obstacle penalty applied), finish clock, and a green **DONE** or red **DNF** pill.
-  Section counts (`On Deck N`, `Running N`, `Done N`) update live as Firebase pushes changes.
-- **Live elapsed timer is gated.** The 1-second `setInterval` only runs when the Running section is expanded; collapsing it clears the interval (battery on iPhone 16 Pro).
-- **Wake-lock.** `navigator.wakeLock.request('screen')` is acquired on page load. A pill near the connection dot shows **Screen lock: on** (green) or **off** (gray). On `visibilitychange` to `visible`, the lock is re-acquired — iOS Safari drops it when the tab backgrounds. If the browser doesn't support the API, the pill reads **Screen lock: unsupported** without blocking the page.
-- **Reconnect UX.** When Firebase reports `.info/connected === false`, the connection dot turns red, an amber **Reconnecting…** banner appears at the top, and a **Retry now** button forces a full re-init (`firebase.app().delete()` + new `initializeApp` + new anonymous sign-in). The SDK auto-retries in the background; the banner shows attempt count and auto-dismisses when the dot flips back to green.
-- **Event picker.** Opening `staff.html` with no `?event=` query parameter shows a list of every event in `/eventIndex/`, sorted by `updatedAt` desc. Each row shows event name, date, competitor count, and a `· read-only` suffix when the event is locked. Tapping a row navigates to `staff.html?event=<id>`. The footer of the live staff view also has a **switch event** link back to the picker.
-- **Theme parity.** Staff view uses the same CSS custom properties as the operator app (`--bg`, `--sur`, `--pri`, `--suc`, `--wrn`, `--dan`, etc.), so the staff phone matches the operator laptop. Mobile-first sizing: `viewport-fit=cover`, safe-area insets respected, minimum 56px touch targets.
-
-### What changed in Block 2 (revision, 2026‑05‑23)
-
-- **Multi-event library.** New top-level Firebase node `/eventIndex/<eventId>` carries small metadata for every event the operator has touched (`name`, `date`, `day1`, `day2`, `cxCount`, `mode`, `createdAt`, `updatedAt`). The operator can hold up to ~8 events live at once (4/year × 2 years of retention) without touching the full `events/<id>/` subtree. Every `fbWriteCx()` and `fbWriteCfg()` call now also writes the index entry, so the library stays in lockstep with reality.
-- **Event Library panel on Event Config.** Replaces the old Session row. Shows the current event card (eventId, name, competitor count, mode, last updated as `relTime()`), a **Mode** dropdown (`edit` / `readonly`), and **Switch Event**, **New Event**, and **Delete This Event** buttons. The JSON **Save Session to File** / **Load Session from File** buttons moved into this panel.
-- **Three new modals.**
-  - **Switch Event** — table of every event in `/eventIndex/`, current event marked, others have a Switch button. Switching swaps the active event ID in `cfg`, re-points the Firebase listeners, and re-renders without a page reload.
-  - **New Event** — operator enters a new event ID (validated against `validEventId()` and checked for collision against `/eventIndex/`) plus a name. Creates an empty event with default cfg and writes the index entry.
-  - **Delete This Event** — 2-step paranoid flow. Step 1 requires the operator to type both the **Event ID** and **Event Name** exactly (case-sensitive) before Continue enables. Step 2 is a backup gate: **Export JSON First** (downloads the session envelope) or **Delete Permanently**. After delete, a 15-second undo bar appears with an in-memory snapshot (`_delEvSnapshot`) that can restore the event in full.
-- **Per-event read-only mode (Level B).** `cfg.mode = 'edit' | 'readonly'` is stored per-event in Firebase. In `readonly`:
-  - Timing buttons (**Start**, **Finish**, **DNF**, **Obstacle ±**) are hidden via the `.ro-hide` class (`body.readonly .ro-hide{display:none}`).
-  - Check-in status controls are disabled.
-  - CSV import section and the Clear All Data button are hidden.
-  - Inline field edits (name/email/squad/paid) **remain enabled** — this is the deliberate Level B carve-out so the operator can fix data after the event closes.
-  - A persistent amber `#ro-banner` reading "Read-only mode — timing is frozen for this event" is rendered inside `<main>`.
-  - Switching to `readonly` is one click; `readonly` → `edit` requires a confirmation prompt.
-  - JS guards in every destructive handler (`doStart`, `doFinish`, `doDNF`, `adjObs`, `setCi`, `confirmClear`, `impCSV`) toast "Read-only mode — …" and bail before mutating state, so the lock holds even if a stale DOM element slips through CSS.
-- **Silent migration.** On first load of an event that has no `/eventIndex/` entry, `syncCfgToUI()` writes one from the current `cfg` so the legacy single-event install upgrades without operator intervention.
-- **Session envelope bumped to `version: 4`.** Same shape as v3; the version number is the migration signal. Loaders accept v3 and v4 envelopes.
-
-### What changed in Block 1.5 (revision, 2026‑05‑22)
-
-- **Seed data removed.** No more hardcoded `loadSample()` 46-row dataset; the app boots with an empty roster. Every data screen renders an empty-state card with **Import CSV** and **Download Template** buttons when `cx.length === 0`.
-- **CSV import is now header-driven, not positional.** Required headers: `first, last, division, day, squad`. Optional: `shirt, phone, email, address, paid, pmm link`. Header detection is case-insensitive and accepts aliases (e.g. `First Name`, `FIRST`, `first_name`, `firstname` all resolve to `first`). Column order does not matter. Missing required headers → hard reject with row-level error log. See §5.1.
-- **`approval` field removed.** Dropped from data model (`Competitor PII object`), Roster screen column, CSV format, and session-export envelope. No migration step is required — Firebase nodes that still carry it will simply ignore the field on next write.
-- **Paid normalization.** Import normalizes any case (`paid`, `PAID`, `Paid`, `yes`, `1`) to canonical `Paid`/`Unpaid`/`Waived`. Fixes Block 1 bug where lowercase `unpaid` rendered as `Paid` in the Check-In dropdown because no option matched.
-- **Download Template button** on Event Config emits `rng-ops-roster-template.csv` (headers only, no rows). Replaces the old Load Sample Data button.
-
-### What changed in v2.3 (2026‑05‑22 prior revision)
-
-- Calendar dates removed from the roadmap. Plan is now a sequenced block plan with no fixed deadlines; user has ample runway before the next event.
-- Operator email locked to `rng.ops.operator@gmail.com` (Block 4 creates this account).
-- §4 retitled "Sequenced Block Plan" — blocks remain ordered, each has a "Done when" gate, but no date ranges.
-- §14 "Target" file structure no longer dated.
-- Event-day go-live checklist no longer dated.
-
-### What changed in v2.2
-
-- Three-file architecture confirmed; "single file" hard constraint replaced with "inline-everything-per-file, no bundlers, no build step."
-- Stale `enablePersistence()` claims removed (the call doesn't exist in shipped code).
-- Runtime credential entry removed; Firebase config hardcoded only.
-- Event ID model switched from auto-year to operator-named explicit ID.
-- PII split into a separate Firebase node behind operator-only email/password auth.
-- Auto-snapshot to Firebase every 5 minutes (Block 5).
-- Block sizes re-fit to a 9-week feature-work / 4-week cushion shape (Sizing B).
-- Design System inlined (§15) — no more dangling v1 references.
-- Working agreement aligned to 1–4 questions per Space instructions.
-- Event-day checklist updated to reflect current reality.
+**Last updated**: 2026-05-25
+**Operator**: Cody Allenbaugh (`codyallenbaugh@gmail.com`)
+**Operator Firebase account**: `rng.ops.operator@gmail.com` · UID `Te9HFmyA1cREPARflULb17jstNI3`
+**Production URL**: <https://rng-ops.netlify.app/>
+**Repo**: <https://github.com/DRT-cloud/RNG_OPS>
 
 ---
 
-## 1. Context & Deployment
+## 0. Reading this doc
 
-- **Stack per file:** inline HTML, CSS, vanilla JS in each `.html` file. Firebase compat SDK (v10.12.2) loaded via three CDN script tags (`app-compat`, `database-compat`, `auth-compat`).
-- **Hosting:** GitHub repo [`DRT-cloud/RNG_OPS`](https://github.com/DRT-cloud/RNG_OPS) → Netlify auto-deploy from `main`. Root URL serves the operator app via `netlify.toml` 200-status redirect. Auto-publishing on.
-- **Primary operator:** one laptop at the timing/start line, full browser, online via event wifi or hotspot. Authenticated via email/password (Block 4).
-- **Secondary devices (first-class):** read-only iPhone 16 Pro for staff dashboard; read-only iPhone 16 Pro for competitor board. Anonymous auth, scoped reads only.
-- **Offline behavior:** no browser-side persistence; all state is in-memory or in Firebase. Brief disconnects (<60s) are handled by the RTDB SDK's automatic write queue and reconnect resync. Prolonged outages are covered by JSON session export (Block 1) and auto-snapshots (Block 5).
-- **Theme:** dark mode default, light mode toggle, system preference respected on load.
+This spec is the **target state and contract** for what the app does and how. For "what we built last week and what's broken right now," see `status.md`.
 
-### Hard constraints (do not break)
+The spec is organized so the most stable, reference-y material is at the top and the planning material is at the bottom:
 
-- **No bundlers, no frameworks, no build step.** Plain HTML/CSS/JS served as-is by Netlify.
-- Each app file is **inline-everything** — its HTML, CSS, and JS live in one file. No shared modules across files. Cross-file consistency is maintained by hand (with help from the release checklist).
-- Vanilla JS only. DOM APIs, no external JS libraries beyond Firebase compat SDK.
-- Operator app must preserve existing patterns: `cx` competitor array, `cfg` config object, `renderAll()` flow, bibs derived (never persisted as authoritative state).
-- Operator app must remain usable on a single laptop with zero secondary devices connected.
-- Mobile views must remain read-only — no edit controls in the DOM at all.
-
----
-
-## 2. Event Structure
-
-- Two-day event: **Friday** and **Saturday** nights.
-- Each night has a **configurable start time** (default 21:30 for both).
-- Competitors are organized into **Squads** (numbered groups).
-- Slots per squad derived from `floor(3600 / interval_seconds)`.
-- Default release interval: **5:00** (300 seconds). Adjustable in real time.
-- **Bib format:** `SSXX` — two-digit squad + two-digit slot (e.g., Squad 3, Slot 7 = `0307`).
-- Special squad ranges:
-  - Squads 10–19 = **STAFF** (tagged, excluded from results)
-  - Squads 20–29 = **SPONSOR** (tagged, excluded from results)
-  - All other squads = regular competitors
-
-### Divisions
-
-- `2-GUN`
-- `NV 2-GUN` (night vision)
-- `PCC` (pistol-caliber carbine)
-- `NV PCC` (night vision PCC)
+- §1 Identity & deployment
+- §2 Surfaces (operator app, staff view; competitor view planned)
+- §3 Data model (Firebase tree, record shapes, PII split)
+- §4 Auth & DB rules (current, published)
+- §5 Event lifecycle (create / switch / delete / restore)
+- §6 Scoring & timing rules
+- §7 Screen map (per-surface UX contract)
+- §8 Design system (color tokens, type scale, components)
+- §9 File structure & dependencies
+- §10 Working agreement (how Cody + the assistant collaborate)
+- §11 Block roadmap (what shipped, what's next, what's deferred)
+- §12 Decision log (irreversible design calls and why)
 
 ---
 
-## 3. Implemented Features (Phase 1 + 1.5 + 2 + 3 — shipped)
+## 1. Identity & deployment
 
-### Phase 1 (operator app)
+**Product**: RNG OPS — operations admin app for Run and Gun (RNG) biathlon events. Optimised for one operator at a timing station plus a handful of staff phones reading live state.
 
-1. Single-screen run control — Start and Finish on the same row.
-2. Bib auto-assignment at check-in; format `SSXX`.
-3. Adjustable release interval (live global control; applies to unstarted competitors only).
-4. Scheduled start time per row, auto-calculated from interval + slot.
-5. Actual start timestamp via `Date.now()`.
-6. Actual finish timestamp via `Date.now()`.
-7. Obstacle penalty counter ±1 per row; each obstacle = configurable seconds (default 5:00).
-8. DNF flag; blocks finish timestamp while set.
-9. Check-in status: Pending / Checked In / Late / No Show.
-10. Inline field edits on Check-In: Last, First, Division, Squad, Paid.
-11. Change warning badge (`!`) on edited rows; click to see field-level diffs across all screens.
-12. Squad grouping with header rows (squad number, type, day, slot fill count) on every screen.
-13. Empty/open slot rows on Run Scoring.
-14. Day filter (All / Friday / Saturday) in topbar.
-15. Search filter (name/bib) on Check-In and Run Scoring.
-16. CSV import (header-driven; required: `first, last, division, day, squad`; optional: `shirt, phone, email, address, paid, pmm link`). See §5.1.
-17. CSV export.
-18. Clear All Data with confirmation modal + 15-second undo.
-19. Midnight-crossing elapsed-time handling.
-20. Live on-course timer with color shifts at 1:30:00 (warn) and 2:00:00 (alert).
-21. Row contrast: 1px divider between every data row.
-22. Dark/Light mode toggle.
+**Hosting**: Netlify, auto-deploy on `main`. `netlify.toml` redirects `/` → `/rng-ops-firebase.html`.
 
-### Phase 1.5 (Firebase, shipped 2026‑05‑19/20)
+**Backend**: Firebase Realtime Database (project `rng-ops`). No server-side code, no functions, no auth flows beyond Firebase Auth itself.
 
-- Real-time sync of `competitors` and `config` nodes via `on('value')`.
-- Per-edit writes via `fbWriteOne(c)`; bulk writes via `fbWriteCx()`.
-- Sidebar connection dot — green (online) / amber (syncing) / red (offline or unauthenticated).
-- Firebase config hardcoded in `rng-ops-firebase.html` (FIREBASE_CONFIG block).
-- Event ID currently auto-derived from `slug(cfg.name) + '-' + new Date().getFullYear()` — superseded by Block 1 explicit Event ID (§7).
-- **Anonymous auth** on every page load; DB rules require `auth != null`.
+**Surfaces shipped**:
+- `rng-ops-firebase.html` — operator app (single laptop at start/finish line)
+- `staff.html` — read-only mobile staff view
 
-### Phase 2 (Multi-event library + read-only mode, shipped 2026‑05‑23)
+**Surfaces planned**:
+- `competitor.html` — competitor-facing leaderboard / "find my bib" (deferred until 1–2 events run)
 
-- **Top-level `/eventIndex/<eventId>` Firebase node** — metadata-only registry of every event the operator has touched. Written on every `fbWriteCx()` and `fbWriteCfg()`. Schema: `{ name, date, day1, day2, cxCount, mode, createdAt, updatedAt }`.
-- **Event Library panel on Event Config** — current event card, mode dropdown, Switch / New / Delete buttons, JSON Save/Load to file.
-- **Switch Event modal** — lists all events from `/eventIndex/`, swaps active event ID without page reload.
-- **New Event modal** — validates ID against `validEventId()` and collisions, creates empty event with default cfg.
-- **Delete This Event modal** — 2-step gate (type Event ID + Event Name exactly, then Export JSON First or Delete Permanently). 15-second in-memory undo.
-- **Per-event read-only mode (Level B)** — `cfg.mode` toggles timing buttons / CSV import / Clear All off via `.ro-hide` + `body.readonly` CSS, while leaving inline field edits enabled. Persistent amber banner. JS guards on `doStart`, `doFinish`, `doDNF`, `adjObs`, `setCi`, `confirmClear`, `impCSV`.
-- **Silent eventIndex migration** — first load of a pre-Block-2 event writes its index entry automatically.
-- **Session envelope bumped to `version: 4`**. Loaders still accept v3.
-
-### Phase 3 (Staff view + reconnect/wake-lock polish, shipped 2026‑05‑25)
-
-- **Shared Firebase config** — `rng-fb-config.js` is loaded by both `rng-ops-firebase.html` and `staff.html`. Single source of truth; the inline `FIREBASE_CONFIG` literal and dead `firebaseConfig` literal in the operator file were removed.
-- **Staff view (`staff.html`)** — mobile-first read-only page at `staff.html?event=<eventId>`. Anonymous auth, no edit DOM, no write calls.
-- **Three collapsed sections** — On Deck (`ci === 'in' && !st`), Running (`st && !fi && !dnf`), Done (`fi || dnf`). All closed on load. Live counts. DNF (red) vs DONE (green) pill on Done rows; obstacle badge `+N` when penalties exist; final time = `(fi-st) + ob*penalty*1000` formatted `m:ss`.
-- **Wake-lock with status pill** — `navigator.wakeLock.request('screen')` on load. Pill shows on/off/unsupported. Re-acquires on `visibilitychange`.
-- **Reconnect UX** — amber banner with **Retry now** button when `.info/connected === false`. SDK auto-retries in background; banner auto-dismisses on green. Retry now button forces a full re-init.
-- **Live elapsed timer** — 1 s interval, gated on the Running section being expanded; cleared when collapsed.
-- **Event picker** — `staff.html` with no `?event=` shows a list of every event in `/eventIndex/` sorted by `updatedAt` desc.
-- **Theme parity** — staff page uses the same CSS custom properties (`--bg`, `--sur`, `--pri`, `--suc`, `--wrn`, `--dan`) as the operator app.
+**Auth model in production today**:
+- Operator: email/password, persistent local session, single account.
+- Staff: anonymous Firebase auth, no human-facing login, open URL.
+- Competitor surface (future): anonymous auth + per-event passphrase.
 
 ---
 
-## 4. Sequenced Block Plan
+## 2. Surfaces
 
-No fixed dates. Blocks are executed in order; each has a "Done when" gate that must pass before the next begins. Work respects user's hard rules: no work after 6 PM, Monday = planning, Friday = low cognitive load, weekends = personal projects. Block 6 (synthetic dry run) and Block 8 (real-world dress rehearsal) gate event readiness — neither can be skipped.
+### 2.1 Operator app — `rng-ops-firebase.html`
 
-### Block 1 · Race-day safety items
+One file, one laptop, single source of truth for the event. Sign-in modal gates all DB access. Tabs:
 
-- **Explicit Event ID** (§7) — replace auto-year derivation with operator-named ID on Event Config. Add validation: `[a-z0-9-]+`, max 60 chars. Stored in `cfg.eventId`. Default falls back to `slug(cfg.name)` + current year for backward compat with existing data.
-- **JSON session export/import** — offline failover. "Save Session" + "Resume Session" buttons on Event Config. Envelope: `{version, exportedAt, eventId, cfg, cx}`. Resume confirmation modal shows imported eventId vs current. Write-through to Firebase on resume.
-- **Quoted-field CSV parser** — replace `impCSV()` naive `split(',')` with state-machine handling `"quoted,values"`, escaped `""`, and CRLF. Friday low-load task.
+- **Check-In** — mark competitors Pending / Checked In / Late / No Show; edit PII fields.
+- **Run Scoring** — start releases, capture finishes, mark DNF, count obstacles.
+- **Results** — overall and by-division rankings; raw vs penalised time.
+- **Event Config** — Account (sign in/out), Event Settings (ID, name, day times, interval, obstacle penalty), Event Library (switch / new / delete), Firebase Connection, Import Competitors (CSV), Session backups.
 
-**Done when:** Round-trip session export preserves all timing state; test CSV with comma-bearing addresses imports correctly; new event IDs survive a calendar-year rollover.
+Read-only mode toggle (set on Event Config) hides all write actions across all tabs without disconnecting Firebase.
 
-### Block 2 · Staff View MVP
+### 2.2 Staff view — `staff.html`
 
-- Create `staff-view.html` — separate file, mobile-first, inline-everything, ~10KB target.
-- Firebase anonymous auth + read-only listeners on `events/<id>/competitors` and `events/<id>/config`.
-- **No-event-yet state:** if `competitors` is empty or the eventId in the URL has no data, render full-screen "Waiting for event…" with a sync indicator and the event ID being watched.
-- Layout: event header · status counts (Checked In / On Course / Finished) · On Course live list with elapsed timer + color thresholds (1:30 warn / 2:00 alert) · Next Up panel · sticky footer with sync dot.
-- URL format: `rng-ops.netlify.app/staff-view.html?event=<eventId>`.
+Phone-first, read-only, no PII. Anonymous auth (no human login). Reads `eventIndex/`, `events/<id>/competitors/`, `events/<id>/config/` only.
 
-**Done when:** Open the staff URL on iPhone 16 Pro — state mirrors operator app within 1s of any change.
+**Sections** (collapsed by default, tap to expand):
+- **On Deck** — `ciStatus` is "Checked In" or "Late" AND no `startMs`. Sorted by bib.
+- **Running** — has `startMs`, no `finishMs`. Sorted by start time. Live elapsed timer when expanded.
+- **Done** — has `finishMs` OR `dnf=true`. Sorted by finish time. DNF gets badge.
 
-### Block 3 · Staff View ~~polish~~ (shipped 2026‑05‑25)
+**Always-visible disclaimer banner** at top: "NOT FINAL — LIVE TRACKING ONLY" (yellow, 11px, one-line on iPhone SE).
 
-Shipped as `staff.html` + shared `rng-fb-config.js`. Detail in §5 (Staff view) and the Block 3 changelog at the top of this document.
+**Reliability features** (Block 3):
+- Screen Wake Lock with status pill near the connection dot.
+- Reconnect banner with "Retry now" button when `.info/connected` flips to false.
+- Event picker when `?event=` is missing — lists every event in `/eventIndex/` sorted by `updatedAt` desc.
 
-- Three collapsed sections (On Deck / Running / Done), tap-to-expand, all closed by default.
-- Theme parity with operator app via shared CSS custom properties.
-- DNF (red) vs DONE (green) pill on Done rows; obstacle count badge `+N` on rows with penalties.
-- Wake-lock acquired on load with status pill near connection dot; re-acquires on `visibilitychange`.
-- Reconnect: amber banner with **Retry now** button forces a full re-init; SDK also auto-retries in background; `.info/connected` flip dismisses banner.
-- Event picker when `?event=` is missing, sorted by `updatedAt` desc, lists every event in `/eventIndex/`.
+### 2.3 Competitor view — `competitor.html` (deferred)
 
-**Done when:** Staff could run a full event night without complaints. — Met (Netlify preview verified by operator).
-
-### Block 4 · Operator Auth + PII Lockdown (4a only — 4b deferred)
-
-**Scope decision (2026-05-25):** competitor view (4b) deferred to Block 5+ until the operator has run 1–2 real events and refined the UI/behavior. This block ships 4a only.
-
-**4a. Operator email/password auth + PII split — IMPLEMENTED**
-
-- Email/password provider enabled in Firebase Console; operator account `rng.ops.operator@gmail.com` (UID `Te9HFmyA1cREPARflULb17jstNI3`) created.
-- Operator app: replaced anonymous sign-in with email/password. Full-screen sign-in modal (`#mo-signin`) gates all DB access; appears on first load when no cached session and after sign-out. Persistence is `firebase.auth.Auth.Persistence.LOCAL` — session survives page reloads and browser close.
-- "Account" section at top of Event Config tab shows the signed-in email and a "Sign out" button. Sign-out shows a `confirm()` dialog ("Sign out? You'll need to sign back in to make changes.") to prevent accidental sign-out mid-event.
-- On sign-out: listeners detach, `fbDb`/`fbRef` null out, in-memory `cx` clears, modal reappears. Sign-in cleanly re-attaches listeners.
-- PII fields (`phone`, `email`, `address`, `paid`, `pmm`, `shirt`) moved from `events/<id>/competitors/<id>` to `events/<id>/private/<id>`. Defined in code as `PII_FIELDS` constant.
-- `splitCxRecord(c)` / `mergeCxRecord(pub, priv)` helpers handle the public/private split and merge.
-- `fbWriteCx()` and `fbWriteOne()` use multi-path `update()` so public and private halves write atomically. `fbDeleteOne()` added for symmetric removal from both nodes.
-- `bindEventListeners()` attaches a third listener on `private/`. Two in-memory caches (`_pubCache`, `_privCache`) are merged on every change into the unified `cx` array — existing UI code is unchanged.
-- Listener-driven UI updates are suppressed (`_migrationRunning` flag) while migration is in flight.
-- Auto-migration (`runPiiMigrationOnce(uid)`) runs once per device per operator UID on first successful sign-in. Reads `/eventIndex/`, iterates all events, and for each cx record at `competitors/<id>` that still has any PII field, multi-path-updates the PII to `private/<id>/<field>` and nulls the source field. Idempotent: re-running skips already-empty records. Success flag stored in `localStorage` as `rng_pii_migrated_v1_<uid>`. On failure the flag is not set so it retries on next sign-in. Toast on success when records moved.
-- Clear-all-data (`confirmClear`) and event-restore (`undoDeleteEvent`) updated to operate on both `competitors/` and `private/` nodes.
-- Spec §10 DB rules tightened to `auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'` on writes and on the `private/`/`access/`/`snapshots/` subtrees. **Rules are NOT published until the operator has signed in once on the Netlify preview and verified migration completed.**
-
-**4b. Competitor view — DEFERRED**
-
-Deferred to Block 5+ until the operator runs 1–2 real events and refines requirements. Spec text retained below for reference.
-
-- Create `competitor-view.html`.
-- **Passphrase gate** — operator sets passphrase on Event Config; stored at `events/<id>/access/competitorPassphrase` as SHA-256 hash. Competitor view's gate hashes typed input, compares, stores `'unlocked'` in `localStorage` keyed to event ID. **Note: the passphrase is UX friction, not security — the DB rules are what actually protect PII.**
-- Renders full first + last name (matches posted start list). Reads only `events/<id>/competitors` — PII is on a separate node the competitor view's anon user can't read.
-- Layout: event header · "Next 5 starts" with live countdowns · "Find my bib" search · "Show all by squad" toggle.
-- **No-event-yet state:** same "Waiting for event…" pattern as staff view.
-- URL format: `rng-ops.netlify.app/competitor-view.html?event=<eventId>`.
-
-**Done when (4a only):** Operator signs in with email/password; PII is on `private/` node after migration; staff view continues to work (already PII-free); tightened DB rules deny `private/` reads to anyone but the operator UID.
-
-### Block 5 · Competitor View polish + Auto-snapshot
-
-- Live leaderboard toggle (during/after event).
-- Squad/division filter.
-- "My squad on deck" flash when squad enters the start window.
-- Sticky footer with last-sync time.
-- **Auto-snapshot** — operator app writes a full session envelope to `events/<id>/snapshots/<ms-timestamp>` every 5 minutes, and immediately before any clear-all or bulk import.
-- "Restore from snapshot" UI on Event Config — modal lists the most recent 10 snapshots with timestamps, restore picks one, replaces state, writes through to Firebase.
-- Auto-prune snapshots beyond the most recent 50.
-
-### Block 6 · Synthetic dry run
-
-- Import real-event test CSV via header-driven import (see §5.1).
-- Laptop (operator, email/password) + iPhone 16 Pro (staff) + iPhone 16 Pro (competitor, passphrase) all on same event ID.
-- Walk through a fake 90-minute event covering: check-in, mass start, mid-event laptop refresh (state should survive), mid-event simulated wifi drop, finish processing, results display.
-- Compile fix list. The fix list itself isn't part of this block — it bleeds into Block 7.
-
-**Done when:** All blocker-severity items from the dry run are logged with owner + fix plan.
-
-### Block 7 · Fix list + secondary items
-
-- Burn down dry-run fixes.
-- Pick up deferred UI improvements (operator app polish — see §5 list).
-- **Print start list + print results** (`@media print` CSS in operator app, page breaks between squads / divisions).
-
-**Done when:** All Block 6 blockers closed; print views verified.
-
-### Block 8 · Real-world dress rehearsal
-
-- Run the system at a smaller event or closed practice session — identify a candidate event during Block 5.
-- Real venue, real wifi, real glare on phone screens.
-- Final fix list.
-
-**Done when:** Dress rehearsal completes without operator-app crash, data loss, or PII leak; final fix list closed.
-
-### Block 9 · Event-day readiness
-
-- **Code freeze** — 7 days before event, only show-stopper fixes after freeze.
-- Pre-event checklist (§13 event-day go-live) executed the day before event.
-- Event day: go.
-
-**Done when:** §13 event-day go-live checklist passes end-to-end.
-
-### Deferred UI improvements (operator app — Block 7 candidates)
-
-- Button placement / color review on Run Scoring (Start/Finish/DNF clarity at arm's length).
-- Visual cue for on-course vs finished vs DNF rows (background tint, not just badge).
-- Live timer typography (tabular numerals, larger at warn/alert thresholds).
-- Next-Up panel layout (countdown prominence, fewer fields).
-- Empty-slot row contrast in dark mode.
-- Topbar density on narrow screens.
-
-### Explicitly out of scope for v2.2
-
-- Helper edit roles (e.g., marshal who can tap Finish on assigned competitors). Laptop is the only edit surface.
-- Big-screen "TV mode" — staff view at full-screen on a tablet covers it.
-- Persistence beyond Firebase + session JSON + auto-snapshots.
-- Squad drag-to-reorder, stage scoring, wait-time credit, PDF export.
-
-These remain on the long-term backlog and are not blockers for 2026‑10‑21.
+Not built. When built, will be passphrase-gated (per-event passphrase, SHA-256 hashed at `events/<id>/access/competitorPassphrase`), reads only `competitors/` and `config/`, never touches `private/`. Layout sketch: event header · "Next 5 starts" countdowns · "Find my bib" search · "All by squad" toggle · "Live leaderboard" toggle.
 
 ---
 
-## 5. Screen Map
+## 3. Data model
 
-### Operator app (laptop, full functionality)
+### 3.1 Firebase tree
 
-| Screen | DOM ID | Purpose |
+```
+/eventIndex/<eventId>            ← lightweight directory entries
+  name, date, day1, day2, cxCount, mode, createdAt, updatedAt
+
+/events/<eventId>/
+  config/                        ← event-wide settings
+  competitors/<cxId>             ← non-PII (public to any authed user)
+  private/<cxId>                 ← PII (operator-only)
+  access/                        ← passphrase hashes (operator-only) [planned]
+  snapshots/                     ← versioned undo history (operator-only) [planned]
+```
+
+`<eventId>` is operator-chosen, validated against `^[a-z0-9-]{1,60}$`, no leading/trailing hyphen.
+
+### 3.2 Competitor record (public — `competitors/<cxId>`)
+
+| Field | Type | Notes |
 |---|---|---|
-| Check-In | `#page-checkin` | Pre-event verification, inline edits, status set |
-| Run Scoring | `#page-run` | Live timing — start, finish, obstacles, DNF, edit |
-| Results | `#page-results` | Live standings, group by division or squad |
-| Roster | `#page-roster` | Read-only reference, sortable, searchable |
-| Event Config | `#page-config` | Event setup, **Event Library (switch/new/delete, mode dropdown, JSON save/load)**, data import/export, passphrase, snapshots, clear-all, sign-out |
+| `id` | number | Stable, opaque |
+| `bib` | number | Sortable as integer |
+| `first` | string | Required |
+| `last` | string | Required |
+| `div` | string | "2-GUN" / "NV 2-GUN" / "PCC" / "NV PCC" |
+| `day` | string | "fri" or "sat" |
+| `squad` | number | 1+ |
+| `slot` | number | Position within squad |
+| `ciStatus` | string | "Pending" / "Checked In" / "Late" / "No Show" |
+| `startMs` | number | epoch ms, null until released |
+| `finishMs` | number | epoch ms, null until finish captured |
+| `dnf` | boolean | true if competitor did not finish |
+| `obstacles` | number | Count of skipped obstacles; each adds `cfg.penalty` seconds |
+| `_changes` | array | Per-record audit trail (optional) |
 
-### Staff view (iPhone 16 Pro, read-only) — shipped Block 3
+### 3.3 Private record (PII — `private/<cxId>`)
 
-File: `staff.html`. Mobile-first scrollable page. No edit controls, no input fields, no `contenteditable` elements. Anonymous auth via shared `rng-fb-config.js`. Subscribes to `events/<eventId>/competitors` and `events/<eventId>/config` only.
+| Field | Type |
+|---|---|
+| `phone` | string |
+| `email` | string |
+| `address` | string |
+| `paid` | string ("Paid" / "Unpaid" / "Waived") |
+| `pmm` | string (payment link) |
+| `shirt` | string |
 
-**URL contract**
+**Rule**: PII fields never appear at `competitors/<cxId>`. Operator app splits writes via `splitCxRecord(c)` → multi-path atomic update. Reads merge via `mergeCxRecord(pub, priv)` so the in-memory `cx[]` array is a single unified record per competitor and the UI code is unchanged.
 
-- `staff.html?event=<eventId>` — live staff view for that event.
-- `staff.html` with no `?event=` — picker listing every event in `/eventIndex/`, sorted by `updatedAt` desc.
+### 3.4 Config record (`events/<id>/config/`)
 
-**Header** (sticky)
+| Field | Notes |
+|---|---|
+| `eventId` | mirrors the node key |
+| `name` | display name |
+| `eventDate` | event date (display) |
+| `friStart` | "HH:MM" — first squad release time on Friday |
+| `satStart` | "HH:MM" — first squad release time on Saturday |
+| `interval` | "MM:SS" — default release interval between squads |
+| `penalty` | seconds — obstacle penalty per skip |
+| `mode` | "edit" or "readonly" |
 
-- **RNG OPS staff** brand mark.
-- **Screen lock** pill — green `Screen lock: on` when wake-lock is active, gray `off` when released, `unsupported` on browsers without the API.
-- **Connection dot** — green (live) / amber (signing in / connecting) / red (offline). Pulled from `.info/connected`.
-- Event line below: event name + event ID pill.
+### 3.5 Event index entry (`eventIndex/<id>`)
 
-**Reconnect banner** (only when `.info/connected === false`)
+| Field | Notes |
+|---|---|
+| `name`, `date`, `day1`, `day2` | display strings |
+| `cxCount` | last-known competitor count |
+| `mode` | mirrors `config/mode` for UI badges |
+| `createdAt`, `updatedAt` | epoch ms |
 
-- Amber sticky banner above the header: `Reconnecting… (attempt N)`.
-- **Retry now** button calls `retryNow()` — detaches listeners, deletes the Firebase app, re-initializes, re-signs anonymously, re-binds the event. Useful when the SDK is stuck (rare, but happens on long iOS backgrounding).
-- Auto-retries every 5 s in the background; banner auto-dismisses on green.
+Written via `fbWriteEventIndex()` whenever competitors or config change. Used by staff view's no-`?event=` picker.
 
-**Three sections**
+### 3.6 Session export envelope
 
-All closed by default per operator preference. Tap header to toggle.
+JSON file produced by "Save Session to File" / consumed by "Load Session":
 
-| Section | Predicate | Row content |
-|---|---|---|
-| **On Deck** | `c.ci === 'in' && !c.st` | bib · last, first · division · squad |
-| **Running** | `c.st && !c.fi && !c.dnf` | bib · last, first · division · squad · live elapsed `m:ss` · start clock |
-| **Done** | `c.fi \|\| c.dnf` | bib · last, first · division · squad · obstacle badge `+N` · **DONE** or **DNF** pill · final time · finish clock |
+```
+{ "version": 4, "exportedAt": <epoch>, "eventId": "<id>", "cfg": {...}, "cx": [...] }
+```
 
-Section counters tick live. Final time on Done rows = `(fi - st) + ob * cfg.penalty * 1000`, formatted `m:ss`.
-
-**Live elapsed timer**
-
-- 1 s `setInterval` updates `.elapsed` cells inside the Running section.
-- Started only when the Running section is expanded; cleared when collapsed. Reduces battery draw on a phone that may sit on the staging table for 3 hours.
-
-**Wake-lock**
-
-- `navigator.wakeLock.request('screen')` acquired on `load`.
-- `visibilitychange` re-acquires when the tab returns to visible (iOS Safari drops it on background).
-- Pill near the connection dot reflects state.
-
-**No-event-yet state:** event picker renders when `?event=` is absent. Empty `/eventIndex/` renders "No events yet. The operator hasn’t created any."
-
-**Out of scope for Block 3** (deferred to later polish if requested):
-
-- Scheduled-vs-actual start delta on rows.
-- Color thresholds on elapsed times.
-- Live leaderboard / rank display.
-
-### Competitor view (iPhone 16 Pro, public-facing, read-only)
-
-Anonymous auth + passphrase gate. Reads only `competitors`, not `private/`. Sections:
-
-- Event header — name, day
-- Next 5 starts — live countdowns
-- Find my bib — search
-- Show all by squad — toggle
-- Live leaderboard (during/after event) — toggle
-
-**No-event-yet state:** "Waiting for event…" with the watched event ID visible.
+`cx[]` carries the merged (PII-inclusive) records so a restore can rebuild both nodes.
 
 ---
 
-## 6. Data Model
+## 4. Auth & DB rules
 
-### Competitor object — PUBLIC (operator app `cx[]`; Firebase `events/<id>/competitors/<id>`)
+### 4.1 Operator app
 
-```javascript
-{
-  id: Number, bib: String,        // bib derived
-  first: String, last: String,
-  div: String,        // '2-GUN' | 'NV 2-GUN' | 'PCC' | 'NV PCC'
-  day: String,        // 'Friday' | 'Saturday'
-  squad: Number, slot: Number,
-  ciStatus: String,   // 'Pending' | 'Checked In' | 'Late' | 'No Show'
-  startMs: Number|null, finishMs: Number|null,
-  obstacles: Number, dnf: Boolean,
-  _origLast, _origFirst, _origDiv, _origSquad, _origPaid,
-  _changes: Array     // [{field, from, to}]
-}
-```
+- Firebase Auth email/password.
+- Persistence: `firebase.auth.Auth.Persistence.LOCAL` — survives reload, browser close.
+- Sign-in modal (`#mo-signin`) gates everything; appears on first load and after sign-out.
+- Account section on Event Config shows signed-in email + Sign out (with `confirm()`).
+- On sign-out: listeners detach, `fbDb`/`fbRef` null out, in-memory `cx` clears, modal reappears.
+- Migration `runPiiMigrationOnce(uid)` runs once per device per UID on first sign-in; flag in `localStorage` as `rng_pii_migrated_v1_<uid>`.
 
-### Competitor PII object — PRIVATE (operator app `cxPriv{}`; Firebase `events/<id>/private/<id>`)
+### 4.2 Staff app
 
-```javascript
-{
-  id: Number,                     // FK to competitors.id
-  phone: String, email: String, address: String,
-  shirt: String,
-  paid: String,                   // 'Paid' | 'Unpaid' | 'Waived'
-  pmm: String
-}
-```
+- Firebase Auth anonymous (silent, automatic on page load).
+- No human login. URL is the credential.
 
-`approval` was removed in Block 1.5 — it was set but never displayed or filtered. Existing Firebase records that still carry the field are ignored on next write.
-
-### Config object
-
-```javascript
-{
-  eventId: String,         // operator-named, slugified, e.g. 'twilight-2026'
-  name: String,            // human-readable, e.g. 'Twilight Biathlon 2026'
-  eventDate: String,       // 'YYYY-MM-DD' (Block 2; surfaces in Event Library card)
-  day1: String,            // 'YYYY-MM-DD' (Block 2; Friday date)
-  day2: String,            // 'YYYY-MM-DD' (Block 2; Saturday date)
-  mode: String,            // 'edit' | 'readonly' (Block 2; default 'edit')
-  friStart: String,        // 'HH:MM'
-  satStart: String,        // 'HH:MM'
-  interval: Number,        // seconds
-  penalty: Number          // seconds per obstacle
-}
-```
-
-`mode === 'readonly'` freezes timing/CSV/Clear via the `.ro-hide` CSS class and the JS guards in destructive handlers. Inline field edits remain enabled. See §7.1.
-
-### Session export envelope (Block 1, also used for snapshots in Block 5)
-
-```javascript
-{
-  version: 4,                     // bumped from 3 in Block 2; v3 envelopes still load
-  exportedAt: Number,             // Date.now()
-  eventId: String,
-  cfg: { ... },                   // includes cfg.mode after Block 2
-  cx:  [ ... public competitor fields ],
-  cxPriv: { id: {...}, ... }      // present only if operator-exported; absent for snapshot reads by non-operator
-}
-```
-
-`SESSION_VERSION = 4` in `rng-ops-firebase.html`. The shape is unchanged from v3 — the bump signals that `cfg.mode` is now part of the envelope payload.
-
-### Firebase tree (Block 4 target, with Block 2 additions)
-
-```
-eventIndex/                   all authed clients can read (Block 2)
-  <eventId>: {
-    name, date, day1, day2,
-    cxCount, mode,
-    createdAt, updatedAt
-  }
-events/
-  <eventId>/
-    competitors/              all authed clients can read
-      <id>: { public fields }
-    private/                  operator only
-      <id>: { PII fields }
-    config/                   all authed clients can read; includes mode (Block 2)
-    access/                   operator only
-      competitorPassphrase: "<sha256-hex>"
-    snapshots/                operator only
-      <ms-timestamp>: { full envelope }
-```
-
-`/eventIndex/` is the cheap registry that powers the Switch Event modal without dragging every event's full `competitors/` payload over the wire. Written on every `fbWriteCx()` and `fbWriteCfg()` via `fbWriteEventIndex()`; read once on Event Config open via `fbReadEventIndex(cb)`.
-
-### CSV import format (header-driven, since Block 1.5)
-
-**Required headers** (all must be present after alias normalization; case-insensitive):
-
-`first, last, division, day, squad`
-
-**Optional headers** (silently filled blank if absent):
-
-`shirt, phone, email, address, paid, pmm link`
-
-**Column order does not matter.** The importer reads the header row, maps each canonical field to a column index via `mapColumns()`, and pulls cells by index. If any required header is missing, import is rejected before any row is processed and the error log lists the missing fields.
-
-PII columns (`shirt`, `phone`, `email`, `address`, `paid`, `pmm`) flow into `cxPriv` on import after Block 4. `first`, `last`, `division`, `day`, `squad` remain on the public node.
-
-A **Download Template** button on Event Config emits `rng-ops-roster-template.csv` containing the canonical header row (no data rows), suitable for distributing to registration helpers.
-
-### 5.1 Header aliases & paid normalization (Block 1.5)
-
-Incoming headers are normalized before lookup: lowercased, trailing ` name` stripped, internal spaces / underscores / hyphens removed. Lookup table:
-
-| Canonical field | Required | Accepted normalized aliases                       |
-|-----------------|----------|---------------------------------------------------|
-| `first`         | Yes      | `first`, `firstname`                              |
-| `last`          | Yes      | `last`, `lastname`, `surname`                     |
-| `div`           | Yes      | `division`, `div`, `class`                        |
-| `day`           | Yes      | `day`, `raceday`                                  |
-| `squad`         | Yes      | `squad`, `squadnumber`, `squad#`                  |
-| `shirt`         | No       | `shirt`, `shirtsize`, `size`                      |
-| `phone`         | No       | `phone`, `phonenumber`, `mobile`                  |
-| `email`         | No       | `email`, `emailaddress`                           |
-| `address`       | No       | `address`, `streetaddress`                        |
-| `paid`          | No       | `paid`, `feestatus`, `payment`                    |
-| `pmm`           | No       | `pmmlink`, `pmm`                                  |
-
-Examples that all resolve to `first`: `First Name`, `FIRST`, `first_name`, `firstname`, `First`. Examples that all resolve to `squad`: `Squad`, `SQUAD`, `Squad #`, `squad number`.
-
-**Paid normalization** (`normalizePaid()`):
-
-- `paid`, `yes`, `y`, `true`, `1` → `Paid`
-- `unpaid`, `no`, `n`, `false`, `0` → `Unpaid`
-- `waived`, `comp`, `complimentary`, `free` → `Waived`
-- Blank → `Unpaid`
-- Anything else → original value with first letter capitalized (preserved so the operator sees their input)
-
----
-
-## 7. Event ID Model
-
-**Status as of v2.2:** changing in Block 1.
-
-### Today (problematic)
-
-```javascript
-fbEventId = slug(cfg.name) + '-' + new Date().getFullYear();
-```
-
-Year flips on Jan 1; same name + same year collides; depends on system clock.
-
-### Block 1 target
-
-- New `cfg.eventId` field on Event Config — operator-entered, free text.
-- Validated: lowercase alphanumeric + hyphens, max 60 chars. Live-validated as the operator types.
-- On save: written to Firebase at `events/<eventId>/config/eventId`.
-- If `cfg.eventId` is empty when the app first loads, fall back to the legacy derivation for backward compat with existing Firebase data.
-- Mobile views read the eventId from the URL `?event=<eventId>` parameter; operator app reads from `cfg.eventId`.
-
-**Pros:** unambiguous, stable across calendar boundaries, operator-controlled.
-**Trade-off:** one more field to set during event setup. Lives at the top of Event Config.
-
----
-
-## 7.1 Event Lifecycle (Block 2)
-
-The operator now holds multiple events in a single Firebase database. Lifecycle operations live in the Event Library panel on Event Config.
-
-### Active event
-
-- The active event is whichever `cfg.eventId` is currently loaded. All Firebase listeners (`competitors`, `config`) are scoped to `events/<eventId>/`.
-- The current event card in the Event Library shows `eventId`, `name`, competitor count (live from `cx.length`), mode, and `relTime(updatedAt)` from the `/eventIndex/` entry.
-
-### Switch Event
-
-- `openSwitchEventMo()` calls `fbReadEventIndex(cb)` and renders every entry as a row in `#mo-switch-ev`. The current event is marked, all others get a **Switch** button.
-- `confirmSwitchEvent(id)` updates `cfg.eventId`, detaches the current Firebase listeners, re-binds against `events/<newId>/`, and triggers `renderAll()`. No page reload.
-
-### New Event
-
-- `openNewEventMo()` prompts for a new event ID and name.
-- `validateNewEventId()` runs `validEventId()` (`^[a-z0-9-]{1,60}$`, no leading/trailing hyphen) and checks the typed ID against `/eventIndex/` for collisions; the Create button stays disabled until both pass.
-- `confirmNewEvent()` writes an empty `events/<newId>/` (default cfg with `mode: 'edit'`) and a matching `/eventIndex/<newId>` entry, then switches to it.
-
-### Read-only mode
-
-- `cfg.mode` is persisted in `events/<eventId>/config/mode`. Default `'edit'`.
-- The Event Library card has a `<select id="cfg-mode">` with options `edit` / `readonly`; `onModeChange()` handles the toggle.
-- Going **edit → readonly** is one click; going **readonly → edit** requires `confirm('Re-enable editing for this event?')` to prevent accidental reopens after results are posted.
-- `applyMode()` adds or removes `body.readonly`, which the CSS uses to hide `.ro-hide` elements (timing buttons, CSV import section, Clear All button). It also shows or hides `#ro-banner`.
-- `isReadOnly()` returns `cfg.mode === 'readonly'`. Every destructive handler (`doStart`, `doFinish`, `doDNF`, `adjObs`, `setCi`, `confirmClear`, `impCSV`) calls it as its first line and bails with a toast.
-
-### Delete Event
-
-Paranoid because deleting an event drops a year of competitor data.
-
-- **Step 1 — Confirm identity.** Operator must type both the **Event ID** and the **Event Name** exactly (case-sensitive). `validateDeleteEvent()` enables Continue only when both strings match.
-- **Step 2 — Backup gate.** Two buttons: **Export JSON First** (calls `exportBeforeDelete()`, which downloads the session envelope before proceeding) or **Delete Permanently** (calls `confirmDeleteEvent()`).
-- **Delete.** Snapshots `cfg`, `cx`, and the `/eventIndex/` entry into in-memory `_delEvSnapshot`, then removes `events/<eventId>/` and `/eventIndex/<eventId>` from Firebase. Switches to whichever other event is most recent in the index, or to a clean default if none remain.
-- **15-second undo.** `showDeleteUndoBar()` renders a sticky banner with a countdown. `undoDeleteEvent()` writes the snapshot back. After 15s the snapshot is cleared and the delete is permanent. The undo timer is held in `_delEvUndoTimer`.
-
-### Silent migration
-
-A pre-Block-2 install has data under `events/<id>/` but no `/eventIndex/<id>` entry. On the first load after upgrade, `syncCfgToUI()` runs `fbReadEventIndex(cb)` and, if the current event ID is not present, calls `fbWriteEventIndex()` with the current cfg. The legacy event is then visible in the Switch Event modal without manual setup.
-
----
-
-## 8. Bib Assignment Logic
-
-Function: `assignBibs()`
-
-1. Group competitors by `day + squad`.
-2. Within each group, sort by `_wantSlot` (if set) then by `id`.
-3. Assign `slot = i + 1`.
-4. Set `bib = p2(squad) + p2(slot)`.
-5. Delete `_wantSlot` after assignment.
-
-**Bibs are derived on every render** — never persisted as authoritative state.
-
-**Bib change via edit modal:** operator enters target bib; system finds current occupant, sets `_wantSlot` on the moving competitor, shifts all at/below target slot down by one.
-
----
-
-## 9. Scheduled Start Calculation
-
-```javascript
-function schedStart(c) {
-  const base = c.day === 'Saturday' ? cfg.satStart : cfg.friStart;
-  const [h, m] = base.split(':').map(Number);
-  const sec = h*3600 + m*60 + (c.slot - 1) * cfg.interval;
-  const hh = Math.floor(sec / 3600) % 24;
-  const mm = Math.floor((sec % 3600) / 60);
-  return p2(hh) + ':' + p2(mm);
-}
-```
-
----
-
-## 10. Auth, Rules, and Scoring
-
-### Auth model (Block 4 target)
-
-- **Operator (laptop):** Firebase email/password sign-in as `rng.ops.operator@gmail.com`. One operator account in Firebase Console → Authentication → Users. Session persists across browser restarts via Firebase's default `LOCAL` persistence. Sign-out button on Event Config.
-- **Staff (mobile):** anonymous sign-in on page load. No role.
-- **Competitor (mobile):** anonymous sign-in on page load + passphrase gate (UX-only).
-- **Operator role marker:** the operator's UID is hardcoded in DB rules as the authority. No Cloud Functions required.
-
-### DB rules (Block 4 target)
+### 4.3 Published DB rules (current)
 
 ```json
 {
   "rules": {
     "eventIndex": {
       ".read":  "auth != null",
-      ".write": "auth != null && auth.uid === 'OPERATOR_UID_HERE'"
+      ".write": "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'"
     },
     "events": {
       "$eventId": {
         "competitors": {
           ".read":  "auth != null",
-          ".write": "auth != null && auth.uid === 'OPERATOR_UID_HERE'"
+          ".write": "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'"
         },
         "config": {
           ".read":  "auth != null",
-          ".write": "auth != null && auth.uid === 'OPERATOR_UID_HERE'"
+          ".write": "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'"
         },
         "private": {
-          ".read":  "auth != null && auth.uid === 'OPERATOR_UID_HERE'",
-          ".write": "auth != null && auth.uid === 'OPERATOR_UID_HERE'"
+          ".read":  "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'",
+          ".write": "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'"
         },
         "access": {
-          ".read":  "auth != null && auth.uid === 'OPERATOR_UID_HERE'",
-          ".write": "auth != null && auth.uid === 'OPERATOR_UID_HERE'"
+          ".read":  "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'",
+          ".write": "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'"
         },
         "snapshots": {
-          ".read":  "auth != null && auth.uid === 'OPERATOR_UID_HERE'",
-          ".write": "auth != null && auth.uid === 'OPERATOR_UID_HERE'"
+          ".read":  "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'",
+          ".write": "auth != null && auth.uid === 'Te9HFmyA1cREPARflULb17jstNI3'"
         }
       }
     }
@@ -664,246 +225,188 @@ function schedStart(c) {
 }
 ```
 
-`OPERATOR_UID_HERE` will be replaced with the actual UID once the operator account is created in Block 4.
-
-### Scoring
-
-- `total = elapsedMs(startMs, finishMs) + obstacles * cfg.penalty * 1000`.
-- DNF excluded from rank.
-- Staff (squads 10–19) and Sponsor (squads 20–29) excluded from rank.
-
-### Change tracking
-
-- First edit of any field stores `_origField` on the competitor.
-- Subsequent edits diff against `_origField`, not the previous value.
-- Badge clears if the current value matches `_origField` (revert).
+**Property**: anyone signed in (incl. staff anonymous) can read `competitors/`, `config/`, `eventIndex/`. Only the operator UID can write anywhere or read `private`/`access`/`snapshots`.
 
 ---
 
-## 11. Known Risks & Mitigations
+## 5. Event lifecycle
 
-| Risk | Severity | Mitigation | Status |
-|---|---|---|---|
-| Firebase Test Mode rules expire / world-readable | **High** | Anonymous auth + `auth != null` rules | ✅ Closed 2026‑05‑20 |
-| Operator-app PII (phone/email/address) visible to all authed clients | **High** | Split to `events/<id>/private/<id>`; operator-only DB rules; email/password auth on operator | Block 4 |
-| Wifi drop on event night | **High** | RTDB SDK auto-resync covers brief drops; Block 1 JSON export covers prolonged outages; Block 5 auto-snapshot covers laptop failure | Block 1 / Block 5 |
-| Operator laptop hardware failure mid-event | **High** | Auto-snapshot to Firebase every 5 min; "Restore from snapshot" on Event Config from any laptop | Block 5 |
-| Naive CSV parser breaks on quoted fields | Medium | Block 1 — quoted-field parser | Block 1 |
-| No paper backup of start list | Medium | Block 7 — print views | Block 7 |
-| Mobile views show stale data after long backgrounding | Medium | Sticky footer with last-sync timestamp; visible sync dot; auto-reconnect on focus | Block 3 |
-| Event ID collision across calendar years | Medium | Operator-named explicit event ID | Block 1 |
-| Three-file edits drift out of sync (theme tokens, behavior) | Medium | Release checklist enforces cross-file smoke test before merge | Process |
-| Single-file HTML edits risk regressions (e.g., Turn 6 auto-connect bug) | Medium | Per-change branch + Netlify preview deploy + release checklist | Process in place |
-| `file://` origin blocks Firebase | Low | Always access via Netlify URL; never open the file directly from disk | Documented |
-| Bib collisions during rapid squad edits | Low | `assignBibs()` re-derives on every render | Mitigated |
-| Operator forgets to set Event ID before sharing mobile URLs | Low | Live-validate field on Event Config; warn if empty; copy URL only when valid | Block 1 |
+- **Create**: operator types `eventId` in Event Settings → `validateEventId()` checks regex → on first write, `events/<id>/config` and `eventIndex/<id>` are created.
+- **Switch**: Event Library → "Switch Event" → picks from `/eventIndex/` → unbinds listeners, rebinds `fbRef` to new event ID.
+- **New**: Event Library → "New Event" → opens modal to enter new ID + name → creates empty event in Firebase, current event left intact.
+- **Delete** (paranoid 2-step): Event Config → "Delete This Event…" → modal warns + offers "Export Backup First" → typing `eventId` enables the red Delete button → 10-second undo bar after delete using an in-memory snapshot.
+- **Restore session**: Event Config → "Load Session from File" → reviews count + timestamp → confirms → writes through to `competitors/` and `private/`, sets `config/`, writes `eventIndex/`.
 
 ---
 
-## 12. Working Agreement (how we collaborate on this app)
+## 6. Scoring & timing rules
 
-Per the Space instructions, when starting any new topic (UI redesign, new feature, refactor) I will:
-
-1. Summarize current understanding of the relevant screen/feature in 3–5 bullets.
-2. Ask **1–4 focused questions** to reach ≥99% confidence before any code.
-3. Identify which screen(s) and which file(s) are affected, and whether the change is operator UX, data integrity, mobile-view UX, or future phase.
-4. Flag any conflict with hard constraints (§1) and propose a constrained alternative.
-
-Code answers will:
-
-- Stay inline-everything per file. No bundlers, no frameworks, no build step.
-- Use vanilla JS and DOM APIs only.
-- Preserve `cx`, `cfg`, `renderAll()`, derived-bib patterns in the operator app.
-- Call out any change that affects timing, bib assignment, ranking, auth, or PII handling, with implications.
+- **Release**: operator clicks "Release" on the next squad row → captures `startMs = Date.now()` for every member of that squad simultaneously.
+- **Finish**: operator clicks "Finish" on the competitor row → captures `finishMs = Date.now()`.
+- **Raw time**: `finishMs - startMs`.
+- **Penalised time**: `raw + (obstacles × cfg.penalty × 1000)`.
+- **DNF**: marks `dnf = true`; competitor shown in Done section with DNF badge; excluded from ranked results.
+- **No Show**: `ciStatus = "No Show"` — never released, never appears in On Deck/Running.
+- **Late**: `ciStatus = "Late"` — still appears in On Deck (operator may release out-of-order).
 
 ---
 
-## 13. Release / Verification Checklist (per change)
+## 7. Screen map
 
-### Per change (any file)
+### 7.1 Operator app
 
-- [ ] Change made on a branch, not `main` directly.
-- [ ] Netlify preview deploy loaded and tested in Chrome.
-- [ ] Operator app: sidebar Firebase dot turns green within 5s of load (signed in or signing in).
-- [ ] Operator app: Import the canonical test CSV → competitor count renders across all five screens. Empty-state card appears when roster is cleared.
-- [ ] Operator app: start one competitor → live timer ticks → finish → appears in Results.
-- [ ] Operator app: DNF one competitor → appears at bottom of Results, unranked.
-- [ ] Operator app: edit one field → change badge appears; revert → badge clears.
-- [ ] Operator app: CSV export → reimport → identical state (modulo derived bibs).
-- [ ] (After Block 1) JSON session export → clear all → import → identical state including timing.
-- [ ] (After Block 2) Staff view loaded on iPhone 16 Pro at preview URL — state mirrors operator app within 1s of any change.
-- [ ] (After Block 4) Competitor view loaded as anonymous user — DevTools network inspection shows no PII fields readable.
-- [ ] (Block 2) Event Library panel shows the current event card with correct count and mode; Switch Event modal lists every event in `/eventIndex/`.
-- [ ] (Block 2) Toggle Mode to `readonly` → amber banner appears; Start/Finish/DNF/Obstacle buttons disappear; Clear All and CSV import sections hidden; inline name/email edits still save.
-- [ ] (Block 2) Toggle Mode back to `edit` requires confirmation; controls return.
-- [ ] (Block 2) New Event modal rejects an existing ID, accepts a valid unique one; created event boots empty and appears in `/eventIndex/`.
-- [ ] (Block 2) Delete This Event: typing wrong ID or name leaves Continue disabled; exact matches enable it; Export JSON First downloads a session envelope; Delete Permanently removes the event and shows 15-second undo; undo restores the event in full.
-- [ ] (Block 2) Silent migration: clearing `/eventIndex/<currentId>` and reloading writes a new index entry from current cfg.
-- [ ] (Block 3) Open `staff.html` on iPhone 16 Pro Safari with `?event=<id>` — all three sections collapsed by default; counts correct.
-- [ ] (Block 3) Expand Running → elapsed counter ticks every second; collapse → counter stops (network tab quiet).
-- [ ] (Block 3) Screen lock pill shows green `on`; lock the phone for 30 s, unlock, pill re-acquires.
-- [ ] (Block 3) Pull network plug → red dot + amber banner appear within 5 s; **Retry now** button forces a re-init; restore network → banner auto-dismisses.
-- [ ] (Block 3) Operator marks a finish in the operator app → that row moves from Running to Done on staff phone within ~1 s.
-- [ ] (Block 3) Open `staff.html` with no `?event=` → picker lists every event in `/eventIndex/`; tapping one navigates to `staff.html?event=<id>`.
-- [ ] Merge to `main` → wait for Netlify Published → smoke test prod URLs (operator, staff, competitor where applicable).
+| Tab | Purpose | Key actions |
+|---|---|---|
+| Check-In | Pre-event roster management | Edit PII, change `ciStatus`, mark No Show, search by bib/name |
+| Run Scoring | Live timing | Release next squad, capture finishes, +obstacle, DNF |
+| Results | Standings | Filter by day/division, sort by raw or penalised time |
+| Event Config | Setup & admin | Sign in/out, event settings, event library, Firebase, CSV import, session backups |
 
-### Event-day go-live checklist
+### 7.2 Staff view sections
 
-- [ ] Operator signed in with email/password; "Signed in as <email>" visible on Event Config.
-- [ ] Event ID set on Event Config (matches the year of the event date).
-- [ ] Real competitor CSV imported.
-- [ ] Squad structure and bibs verified in Roster.
-- [ ] Friday/Saturday start times confirmed.
-- [ ] Release interval and obstacle penalty confirmed.
-- [ ] Competitor passphrase set and tested.
-- [ ] Staff view URL distributed to staff (with event ID parameter).
-- [ ] Competitor view URL + passphrase posted via QR code at registration.
-- [ ] Dry run: check in 3 competitors, start/finish, verify Results.
-- [ ] JSON session exported as pre-event snapshot.
-- [ ] Auto-snapshot confirmed firing (check Firebase `snapshots/` node has a recent timestamp).
-- [ ] Locked DB rules verified — incognito direct-URL hit on `events/<id>/private/.json` returns Permission denied.
-- [ ] Print start list generated and posted.
+| Section | Inclusion rule | Sort |
+|---|---|---|
+| On Deck | `ciStatus ∈ {Checked In, Late}` AND no `startMs` | by bib asc |
+| Running | has `startMs`, no `finishMs` | by `startMs` asc; live elapsed when expanded |
+| Done | has `finishMs` OR `dnf` | by `finishMs` asc; DNF badge |
+
+Each row shows bib, last + first name, division, squad. Running adds `started HH:MM:SS` + elapsed. Done adds final time + obstacle count badge.
 
 ---
 
-## 14. File Structure
+## 8. Design system
 
-### Current
+### 8.1 Tokens (`:root`)
 
 ```
-RNG_OPS/
-├── rng-ops-firebase.html   ← operator app
-└── netlify.toml            ← root redirect → rng-ops-firebase.html
+--bg #0f1117    --sur #171a23   --sur2 #1e2130   --sur3 #252840
+--tx #e8eaf0    --txm #8b90a0   --txf #4a5060
+--pri #3fb8c8   --prih #2da0b0  --prid rgba(63,184,200,0.12)
+--suc #4caf7d   --sucd rgba(76,175,125,0.15)
+--wrn #f0a840   --wrnd rgba(240,168,64,0.15)
+--dan #e05c6a   --dand rgba(224,92,106,0.15)
+--yel #e8c84a   --yeld rgba(232,200,74,0.15)
 ```
 
-### Target (end of Block 4)
+Spacing scale `--sp1` (4px) through `--sp16` (64px). Radius `--r-sm`, `--r-md`, `--r-lg`. Type scale via `clamp()`: `--text-xs`, `--text-sm`, `--text-base`, `--text-lg`, `--text-xl`.
 
-```
-RNG_OPS/
-├── rng-ops-firebase.html   ← operator app (laptop, full functionality, email/password)
-├── staff-view.html         ← staff dashboard (mobile, read-only, anonymous)
-├── competitor-view.html    ← competitor board (mobile, anonymous + passphrase gate)
-└── netlify.toml            ← root redirect; mobile views served at their own paths
-```
+### 8.2 Components
 
-Each file is inline-everything — no shared modules. Cross-file consistency (design tokens, Firebase config, theme switcher) is maintained by hand. Release checklist §13 enforces a cross-file smoke test before merging.
+- `.btn` variants: `.btn-pri`, `.btn-gho`, `.btn-red`, `.btn-sm`, `.btn-row`.
+- `.mo` + `.md` for modals (centred overlay + card).
+- `.f-row` + `.f-lbl` + `.f-inp` for form rows.
+- `.sec` for staff view collapsible sections.
+- `.disc-banner` for the yellow disclaimer.
+- `.row`/`.row-bib`/`.row-mid`/`.row-r` for staff list rows.
+- `#toast`, `.badge`, `.dot`, `.evlib-*` (event library card).
+
+### 8.3 Font
+
+Satoshi via Fontshare CDN (400/500/700), fallback `Inter`, then system sans.
 
 ---
 
-## 15. Design System
+## 9. File structure & dependencies
 
-Inlined here because each file maintains its own copy. When changing a token, change it in **every file** and run the per-change checklist.
-
-### Color tokens (CSS custom properties)
-
-```css
-:root {
-  /* Dark mode (default) */
-  --bg:           #0f1115;
-  --bg-elevated: #161922;
-  --bg-row:      #1a1e29;
-  --bg-row-alt:  #1f2330;
-  --border:      #2a3142;
-  --text:        #e7eaf2;
-  --text-dim:    #9aa3b8;
-  --text-faint:  #6b7488;
-
-  --accent:      #4f8cff;          /* primary actions */
-  --accent-dim:  #2c5cc7;
-  --good:        #3fb27f;          /* checked in, finished */
-  --warn:        #e8a23a;          /* late, change badge, 1:30 timer */
-  --alert:       #e8553a;          /* DNF, 2:00 timer, errors */
-  --staff:       #b07cd9;          /* squads 10–19 */
-  --sponsor:     #d9a55c;          /* squads 20–29 */
-
-  --sync-online:  #3fb27f;
-  --sync-syncing: #e8a23a;
-  --sync-offline: #e8553a;
-}
-
-[data-theme="light"] {
-  --bg:           #f7f8fb;
-  --bg-elevated: #ffffff;
-  --bg-row:      #ffffff;
-  --bg-row-alt:  #f0f2f7;
-  --border:      #d8dde8;
-  --text:        #0f1115;
-  --text-dim:    #4a5266;
-  --text-faint:  #7d869b;
-  /* accent/good/warn/alert/staff/sponsor unchanged */
-}
+```
+/
+├── rng-ops-firebase.html    operator app (single file, ~2630 lines)
+├── staff.html               read-only staff view (~625 lines)
+├── rng-fb-config.js         shared Firebase config (16 lines)
+├── netlify.toml             redirect / → /rng-ops-firebase.html
+├── rng-ops-spec.md          this spec
+└── status.md                current state, in-flight work, decision log
 ```
 
-### Typography
+`rng-fb-config.js` is the single source of truth for Firebase config. Both HTML files load it via `<script src="rng-fb-config.js">` and read `window.FIREBASE_CONFIG`.
 
-- Family: **Satoshi** via Fontshare CDN; weights 400, 500, 700.
-- Fallback: `system-ui, -apple-system, "Segoe UI", sans-serif`.
-- Tabular numerals on timers and time columns: `font-variant-numeric: tabular-nums;`.
-- Sizes are fluid: `clamp(min, base + vw, max)` so layouts respond to laptop vs phone without explicit breakpoints.
-- Base scale:
-  - `--text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem)` — meta, labels
-  - `--text-sm: clamp(0.875rem, 0.8rem + 0.25vw, 1rem)` — body, table rows
-  - `--text-md: clamp(1rem, 0.9rem + 0.3vw, 1.125rem)` — buttons, primary
-  - `--text-lg: clamp(1.25rem, 1.1rem + 0.5vw, 1.5rem)` — section headers
-  - `--text-xl: clamp(1.5rem, 1.3rem + 1vw, 2.25rem)` — page titles, big counts
-  - `--text-2xl: clamp(2rem, 1.6rem + 2vw, 3.5rem)` — staff view status counts, on-course timer
+### CDN dependencies
 
-### Spacing
+- Firebase JS SDK 10.12.2 (compat APIs): `firebase-app-compat.js`, `firebase-database-compat.js`, `firebase-auth-compat.js`.
+- Fontshare Satoshi (400/500/700).
 
-- Scale (4px base): 4, 8, 12, 16, 24, 32, 48, 64.
-- Row padding: 8px top/bottom, 12px left/right.
-- Section gap: 24px.
-- Page padding (operator): 16px; (mobile): 12px.
-
-### Status badges and row tints
-
-- Checked In: `--good` background at 12% opacity, `--good` text.
-- Late: `--warn` background at 12% opacity, `--warn` text.
-- No Show: `--text-faint` background at 12% opacity, `--text-faint` text.
-- On Course (row tint): `--accent` background at 6% opacity.
-- Finished (row tint): `--good` background at 6% opacity.
-- DNF (row tint): `--alert` background at 8% opacity.
-- Change badge `!`: solid `--warn`, white text, 16×16 px round.
-
-### Live timer color thresholds
-
-- `<1:30` → `--text`
-- `≥1:30 && <2:00` → `--warn`
-- `≥2:00` → `--alert`
-
-### Connection dot states
-
-- Online → solid `--sync-online`, no animation.
-- Syncing → solid `--sync-syncing`, 1s pulse.
-- Offline / signed out / error → solid `--sync-offline`, no animation.
-
-### Touch targets (mobile views)
-
-- Minimum 44×44 px (Apple HIG floor).
-- Row tap target = full row height, never just the text.
+No build step. No npm. No bundler.
 
 ---
 
-## 16. CDN Dependencies
+## 10. Working agreement
 
-```html
-<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-```
-
-Same set in all three files. Mobile views can skip `firebase-auth-compat.js` only if they remain anonymous-only — but loading it doesn't cost much, and keeping the set uniform simplifies maintenance.
-
----
-
-## What you should do next
-
-1. **Test Block 3 on Netlify preview.** Open the `block3-staff-view-polish` preview URL with `staff.html?event=rng-event` on your iPhone 16 Pro. Walk the Block 3 checklist items in §13.
-2. **Confirm theme parity** — the staff page should match the operator dark palette exactly.
-3. **Then Block 4 — Competitor View + PII Lockdown.** This is the bigger block: creates the operator email/password account, splits PII into `events/<id>/private/`, adds passphrase-gated competitor view, and tightens DB rules.
-4. **Operator email still locked.** Block 4 will create `rng.ops.operator@gmail.com` in Firebase Console. No action needed now; do not create the account until Block 4.
+- **Operator profile**: novice in web dev, expert in process engineering and operations. Treat technical depth on Firebase as something the assistant must explain when introducing; treat operations design as something Cody decides.
+- **Cadence**: Friday is low-cognitive-load. No meetings before 10 AM. No work after 6 PM. Weekends are personal projects.
+- **Prefer small refactors over rewrites.**
+- Every code change ships as a **separate branch + PR**. The assistant must confirm a PR's `state` before pushing follow-up commits to the same branch — otherwise commits orphan when the PR has already been merged.
+- Every plan from the assistant ends with a **"What you should do next"** section.
+- Before code: the assistant summarises the relevant spec in 3–5 bullets and asks 1–4 focused questions to reach ≥99% confidence on screen, scope, and constraints.
+- Confidence levels are stated when data is disputed or uncertain.
 
 ---
 
-*Spec v2.5 revised 2026‑05‑25 — Block 3 shipped: staff view (`staff.html`) with 3 collapsed sections (On Deck / Running / Done), wake-lock + visibility re-acquire, reconnect banner with Retry now button, event picker, theme parity; shared `rng-fb-config.js` is now the single Firebase config source.*
+## 11. Block roadmap
+
+### 11.1 Shipped
+
+| Block | Scope | Status |
+|---|---|---|
+| Phase 1 / 1.5 | Local-storage MVP, fixed seed data → CSV import, scoring math, results | Done |
+| Block 2 | Multi-event library, read-only mode, paranoid delete + undo, JSON session v4 | Done (PR #5) |
+| Block 3 | Staff view + wake-lock + reconnect banner + 3 sections + event picker | Done (PR #6, field-name fix in PR #8) |
+| Block 4a | Operator email/password auth + PII split + auto-migration + tightened DB rules | Done (PR #7) |
+| Staff banner | "NOT FINAL — LIVE TRACKING ONLY" disclaimer | Done (PR #9 + PR #10) |
+
+### 11.2 Deferred (decision-pending)
+
+| Item | Why deferred | When to revisit |
+|---|---|---|
+| **Block 4b — Competitor view** | Want real event experience before designing the public surface | After 1–2 events run |
+| **Multi-operator support** | Single-UID rules work fine for now | When a second operator is needed |
+| **Staff login** | Decided to leave staff view open; URL is the credential | If a sponsor or PII concern forces it |
+
+### 11.3 Candidate next blocks (no commitments)
+
+- **Block 5a — Auto-snapshots** to `events/<id>/snapshots/` every N minutes. Versioned undo for the whole event. Race-day insurance.
+- **Block 5b — Operator UI polish** based on what bites during the first live event. Open scope until that event happens.
+- **Block 6 — Competitor view** (formerly 4b). Designed against real operational data, not guesses. Re-uses access/passphrase plumbing.
+
+---
+
+## 12. Decision log
+
+- **2026-05-22** — Pick explicit event IDs over auto-derived slugs. Operator types the ID; legacy slug derivation kept as fallback for old data only.
+- **2026-05-22** — Read-only mode is a `cfg.mode` field, not a DB rule. Cheaper to toggle, safer per-device.
+- **2026-05-23** — Block 3 staff view: 3 strict sections (On Deck / Running / Done). DNF lives in Done with badge, not its own section.
+- **2026-05-24** — Sign-in modal is full-screen overlay, not a separate route. Avoids extra file + redirect hop.
+- **2026-05-25** — PII migration auto-runs on first operator login per device. Idempotent. Flag keyed by UID in `localStorage`.
+- **2026-05-25** — Sign-out requires `confirm()` to prevent accidental sign-out mid-event.
+- **2026-05-25** — Persistence is LOCAL (survives reload). Operator stays signed in on race-day reloads.
+- **2026-05-25** — Block 4b (competitor view) deferred. Run live events first, design against real data.
+- **2026-05-25** — Staff view stays open (no login, no passphrase). PII is already DB-rule-protected; URL obscurity is sufficient for spectator-grade access control.
+- **2026-05-25** — Staff disclaimer banner is always-visible (not dismissible). Text: "NOT FINAL — LIVE TRACKING ONLY". Yellow tokens, 11px, single-line guarantee via `nowrap + ellipsis`.
+
+---
+
+## 13. Verification checklist (per change)
+
+Before merging any PR:
+
+- [ ] Local Node syntax check on every modified script block (`node --check`).
+- [ ] Visual review of any UI change on iPhone-SE width (320px CSS) on the deploy preview.
+- [ ] If touching Firebase reads/writes: confirm staff view still loads in incognito on the preview.
+- [ ] If touching PII paths: confirm in Firebase Console that PII still resolves to `private/`, not `competitors/`.
+- [ ] If touching DB rules: rules published only after every active device has run migration.
+- [ ] PR description includes a test plan.
+
+---
+
+## 14. Known risks
+
+| Risk | Mitigation |
+|---|---|
+| Operator forgets password mid-event | Firebase password reset via Gmail recovery on `rng.ops.operator@gmail.com` |
+| Single-device dependency on race day | JSON session export ("Save Session to File"); Firebase JSON export from console as periodic backup |
+| Stale staff view if reconnect fails silently | Wake-lock + `.info/connected` watcher + Retry button (Block 3) |
+| Sloppy follow-up commits orphaning after PR merge | Assistant must check PR `state` before pushing to a previously-PR'd branch (see §10) |
+| Public staff URL surface | DB rules prevent PII reads; non-PII data is intentionally world-readable to any anonymous Firebase user with the event ID |
+
+---
+
+**End of spec.** For day-to-day "what's the state of the build right now" see `status.md`.
