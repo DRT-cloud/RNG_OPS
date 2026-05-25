@@ -121,6 +121,19 @@ button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
 
 /* ── Sections ─────────────────────────────────────── */
 .sections{padding:var(--sp3) var(--sp3) var(--sp8)}
+.disc-banner{
+  margin:var(--sp3) var(--sp3) 0;
+  padding:var(--sp2) var(--sp3);
+  background:var(--yeld);
+  color:var(--yel);
+  border:1px solid var(--yel);
+  border-radius:var(--r-md,8px);
+  font-size:var(--text-xs);
+  font-weight:700;
+  letter-spacing:.04em;
+  text-align:center;
+  text-transform:uppercase;
+}
 .sec{
   background:var(--sur);
   border:1px solid var(--bdr);
@@ -533,6 +546,7 @@ function render(){
   const { ondeck, running, done } = partition();
   const main = document.getElementById('main');
   main.innerHTML = `
+    <div class="disc-banner">NOT FINAL SCORES — LIVE RUN TRACKING ONLY</div>
     <div class="sections">
       ${renderSec('ondeck',  'On Deck',  ondeck,  rowOnDeck,  'No one checked in and waiting.')}
       ${renderSec('running', 'Running',  running, rowRunning, 'No one on course.')}
