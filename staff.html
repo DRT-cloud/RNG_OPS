@@ -470,55 +470,66 @@ function fmtFinal(startMs, finishMs, obs, penaltySec){
   return fmtElapsed(raw + pen);
 }
 
+// Field names match the operator app (see rng-ops-firebase.html):
+//   startMs   start timestamp (ms) or null
+//   finishMs  finish timestamp (ms) or null
+//   dnf       boolean
+//   ciStatus  'Pending' | 'Checked In' | 'Late' | 'No Show'
+//   squad     number
+//   obstacles number
+// On Deck = ciStatus in {Checked In, Late} && !startMs (matches the
+// operator's renderRun() roster, which filters out Pending + No Show).
 function partition(){
   const ondeck = [], running = [], done = [];
   for (const c of cx) {
-    if (c.fi || c.dnf)            done.push(c);
-    else if (c.st)                running.push(c);
-    else if (c.ci === 'in')       ondeck.push(c);
+    if (c.finishMs || c.dnf)                                       done.push(c);
+    else if (c.startMs)                                            running.push(c);
+    else if (c.ciStatus === 'Checked In' || c.ciStatus === 'Late') ondeck.push(c);
   }
-  const byBib = (a,b) => (parseInt(a.bib)||0) - (parseInt(b.bib)||0);
-  const byStart = (a,b) => (a.st||0) - (b.st||0);
-  const byFinish = (a,b) => (a.fi||b.fi||0) - (b.fi||a.fi||0);
+  const byBib    = (a,b) => (parseInt(a.bib)||0) - (parseInt(b.bib)||0);
+  const byStart  = (a,b) => (a.startMs ||0) - (b.startMs ||0);
+  const byFinish = (a,b) => (a.finishMs||b.finishMs||0) - (b.finishMs||a.finishMs||0);
   ondeck.sort(byBib);
   running.sort(byStart);
   done.sort(byFinish);
   return { ondeck, running, done };
 }
 
+function squadStr(c){ return c.squad != null ? ' \u00b7 sq ' + esc(c.squad) : ''; }
+
 function rowOnDeck(c){
   return `<div class="row" data-id="${c.id}">
     <span class="row-bib">${esc(c.bib || '\u2014')}</span>
     <span class="row-mid">
       <span class="row-name">${esc((c.last || '') + ', ' + (c.first || ''))}</span>
-      <span class="row-meta">${esc(c.div || '')}${c.sq ? ' \u00b7 sq ' + esc(c.sq) : ''}</span>
+      <span class="row-meta">${esc(c.div || '')}${squadStr(c)}</span>
     </span>
   </div>`;
 }
 function rowRunning(c){
-  return `<div class="row" data-id="${c.id}" data-st="${c.st || 0}">
+  return `<div class="row" data-id="${c.id}" data-st="${c.startMs || 0}">
     <span class="row-bib">${esc(c.bib || '\u2014')}</span>
     <span class="row-mid">
       <span class="row-name">${esc((c.last || '') + ', ' + (c.first || ''))}</span>
-      <span class="row-meta">${esc(c.div || '')}${c.sq ? ' \u00b7 sq ' + esc(c.sq) : ''}</span>
+      <span class="row-meta">${esc(c.div || '')}${squadStr(c)}</span>
     </span>
     <span class="row-r">
-      <span class="clock elapsed">${fmtElapsed(Date.now() - c.st)}</span>
-      <span class="start">started ${fmtClock(c.st)}</span>
+      <span class="clock elapsed">${fmtElapsed(Date.now() - c.startMs)}</span>
+      <span class="start">started ${fmtClock(c.startMs)}</span>
     </span>
   </div>`;
 }
 function rowDone(c){
   const isDnf = !!c.dnf;
   const badge = isDnf ? '<span class="badge dnf">DNF</span>' : '<span class="badge done">DONE</span>';
-  const obs = c.ob ? `<span class="badge obs">+${c.ob}</span>` : '';
-  const final = isDnf ? '' : fmtFinal(c.st, c.fi, c.ob, cfg && cfg.penalty);
-  const finishedAt = c.fi ? 'finished ' + fmtClock(c.fi) : '';
+  const obs = c.obstacles ? `<span class="badge obs">+${c.obstacles}</span>` : '';
+  const final = isDnf ? '' : fmtFinal(c.startMs, c.finishMs, c.obstacles, cfg && cfg.penalty);
+  const finishedAt = c.finishMs ? 'finished ' + fmtClock(c.finishMs) : '';
   return `<div class="row" data-id="${c.id}">
     <span class="row-bib">${esc(c.bib || '\u2014')}</span>
     <span class="row-mid">
       <span class="row-name">${esc((c.last || '') + ', ' + (c.first || ''))}</span>
-      <span class="row-meta">${esc(c.div || '')}${c.sq ? ' \u00b7 sq ' + esc(c.sq) : ''} ${obs}${badge}</span>
+      <span class="row-meta">${esc(c.div || '')}${squadStr(c)} ${obs}${badge}</span>
     </span>
     <span class="row-r">
       <span class="clock">${final}</span>
